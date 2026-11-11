@@ -1,8 +1,8 @@
 const PAYOUT_LABELS = {
-  kong_concealed: 'concealed kong',
-  kong_exposed: 'exposed kong',
-  animal_pair: 'animal pair',
-  bonus_set: 'full bonus set',
+  kong_concealed: 'a concealed kong',
+  kong_exposed: 'an exposed kong',
+  animal_pair: 'an animal pair',
+  bonus_set: 'a full bonus set',
 };
 
 function describe(h, nameOf, payoutMode) {
@@ -11,7 +11,7 @@ function describe(h, nameOf, payoutMode) {
   if (PAYOUT_LABELS[h.kind]) {
     return (
       <>
-        {who} got paid for a {PAYOUT_LABELS[h.kind]}
+        {who} got paid for {PAYOUT_LABELS[h.kind]}
         {h.discarderId ? <> (from <strong>{nameOf(h.discarderId)}</strong>'s discard)</> : null}
       </>
     );

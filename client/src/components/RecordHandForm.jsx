@@ -50,6 +50,8 @@ export default function RecordHandForm({ lobby, onRecord }) {
   const [aiBusy, setAiBusy] = useState(false);
 
   const nameOf = (id) => (id === me ? 'Me' : members.find((m) => m.id === id)?.username ?? '?');
+  // Chips say "Me"; sentences (save button, payout hint) use the real name so they read correctly.
+  const realName = (id) => members.find((m) => m.id === id)?.username ?? '?';
   const windOf = (id) => table?.seatWinds?.[id];
   const playerChips = (ids) => ids.map((id) => ({ value: id, label: `${nameOf(id)}${windOf(id) ? ` · ${windOf(id)[0]}` : ''}` }));
   const allIds = members.map((m) => m.id);
@@ -116,7 +118,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
 
   const winReady = winnerId != null && discarderId !== undefined && tai != null;
   const winSummary = winReady
-    ? `${nameOf(winnerId)} won ${tai} tai ${discarderId == null ? '(self-drawn)' : `off ${nameOf(discarderId)}${payoutMode === 'shooter' ? ', shooter pays' : ''}`}`
+    ? `${realName(winnerId)} won ${tai} tai ${discarderId == null ? '(self-drawn)' : `off ${realName(discarderId)}${payoutMode === 'shooter' ? ', shooter pays' : ''}`}`
     : 'Pick winner, who paid and tai';
   const payoutReady = payoutKind != null && winnerId != null;
 
@@ -250,7 +252,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
           {payoutType && (
             <p className="muted small">
               {discarderId != null && payoutKind === 'kong_exposed'
-                ? `${nameOf(discarderId)} pays ${(each * (allIds.length - 1)).toFixed(2)}.`
+                ? `${realName(discarderId)} pays ${(each * (allIds.length - 1)).toFixed(2)}.`
                 : `Each other player pays ${each.toFixed(2)}.`}
             </p>
           )}
@@ -261,7 +263,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
               save({ kind: payoutKind, winnerId, discarderId: payoutKind === 'kong_exposed' ? discarderId ?? null : null })
             }
           >
-            {payoutReady ? `Save: ${payoutType.label} for ${nameOf(winnerId)}` : 'Pick what and who'}
+            {payoutReady ? `Save: ${payoutType.label} for ${realName(winnerId)}` : 'Pick what and who'}
           </button>
         </div>
       )}
