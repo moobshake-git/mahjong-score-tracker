@@ -13,6 +13,7 @@ A score tracker for **Singapore-style Mahjong**, so a group can keep running sco
 - **Settle up**: turns the totals into the fewest "X pays Y" transfers. It is shown during the game ("if you stopped now") and as the final bill.
 - **Normal payout or shooter pays, per hand**: the lobby has a default, and each discard win can switch between the two.
 - **Voice input**: tap 🎤 and say the hand, e.g. *"Alice won 3 tai from Bob"*, *"Bob zimo 2 tai"* or *"Carol 4 tai, Dave shoot, shooter pay"*. The form fills in for you to check before saving. You can also type the sentence instead.
+- **Score from a photo**: take one photo of the winning hand. The AI reads the tiles, you tap any wrong tile to fix it, and the app works out the tai with fixed rules and fills in the tai calculator. See [Photo scoring](#photo-scoring).
 - **AI helper (LLM via OpenCode Go)**:
   - *Suggest tai*: describe a hand in plain words ("all pongs, red dragon, half colour") and the AI suggests a tai count with a breakdown.
   - *Game recap*: a short write-up of the game so far.
@@ -84,12 +85,20 @@ All settings live in `.env`:
 | Variable | Meaning |
 |---|---|
 | `OPENCODE_API_KEY` | Your OpenCode Go key. It stays on the server and is never sent to the browser |
-| `OPENCODE_BASE_URL` | API base URL. The default is `https://opencode.ai/zen/go/v1`; check the [OpenCode Go docs](https://opencode.ai/docs/go) in case it has changed |
-| `OPENCODE_MODEL` | Model ID, e.g. `kimi-k2.6`. List the available ones with the command below |
+| `OPENCODE_BASE_URL` | API base URL. The default is `https://opencode.ai/inference/go/openai/v1`; check the [OpenCode Go docs](https://opencode.ai/docs/go) in case it has changed |
+| `OPENCODE_MODEL` | Model for text features (tai suggestion, voice parsing, recap). Default `glm-5.3-flash` |
+| `OPENCODE_VISION_MODEL` | Model that reads tiles from a photo. It must accept images. Default `glm-5.3-flash` |
+
+List the available models. Only models whose `api` is `chat-completions` work with this app; image models list `image/jpeg` under `modalities.input`.
 
 ```bash
-curl -H "Authorization: Bearer $OPENCODE_API_KEY" "$OPENCODE_BASE_URL/models"
+curl -H "Authorization: Bearer $OPENCODE_API_KEY" https://opencode.ai/inference/go/v1/models
 ```
+
+Notes:
+- OpenCode Go needs an `x-opencode-session` header on every request; `llm.js` sends one.
+- Avoid models that "think" for a long time before answering (e.g. `kimi-k3`): they can use up the whole reply on hidden reasoning and return nothing, and they are slow at the table.
+- OpenCode Go says it is designed for coding agents and monitors traffic for abuse. Check its terms before relying on it for a public deployment.
 
 Every LLM call goes through `chat()` / `chatJson()` in `server/src/llm.js`. To add a new AI feature, add a route in `server/src/routes/ai.js` and a function in `client/src/api.js`.
 
@@ -109,6 +118,32 @@ Phrases it understands:
 | Self-drawn | "zimo", "self drawn", "self draw" |
 | Shooter pays | "shooter pay", "shooter pays", "pay all" |
 | Normal payout | "normal", "normal payout" (otherwise the lobby default applies) |
+
+## Photo scoring
+
+1. In the **Win** tab, open **📷 Score from a photo** and take (or choose) a photo of the winning hand laid face up, including flowers and animals.
+2. The photo is shrunk to at most 1600 px and sent to `POST /api/ai/tiles`. The vision model only **lists the tiles** it sees (`server/src/routes/ai.js`, `READ_TILES_PROMPT`). The photo is not stored.
+3. The tiles appear as chips. Tiles the model wasn't sure about have a dashed outline. **Tap any tile to change or remove it**, or add a missing one.
+4. `client/src/lib/handAnalysis.js` splits the tiles into 4 sets + a pair (trying every way, and keeping the one worth the most tai), then ticks the matching patterns in the tai calculator: dragon pongs, seat/round wind pongs, all pongs, Ping Hu, half/full colour, seat flowers, animals, and limit hands (Thirteen Wonders, Big Four Winds, all honours). Seat and round wind come from the table; if no winner is picked yet, the photo taker is assumed to be the winner.
+5. Tick anything a photo can't show (e.g. won on the last tile), then press **Use N tai**.
+
+The AI never counts the tai: the same tiles always give the same tai, and the tai values come from `client/src/lib/taiRules.js`.
+
+**How well it reads tiles.** `server/scripts/eval-tiles.js` measures a model against photos with known tiles. The first test used 10 **computer-drawn** hands (not real photos) covering Ping Hu, all pongs, full colour, kongs, flowers, animals, Thirteen Wonders, two rows, tilt and glare:
+
+| Model | Tiles right | Correct tai | Avg time |
+|---|---|---|---|
+| `glm-5.3-flash` (default) | 93% | 8/10 | 4 s |
+| `minimax-m3.1-flash` | 94% | 9/10 | 12 s |
+
+Most mistakes were miscounted bamboo sticks or dots, which is why players check the tiles before using the tai. Other models tried were slower or less accurate (`kimi-k3`, `mimo-v2.6-pro`, `mimo-v2.6-flash`, `deepseek-v4.1-flash`, `step-5-preview`). **Real photos of our own tiles still need testing** (issue #11):
+
+1. Put photos in `eval-photos/` (ignored by git) and add `eval-photos/expected.json` listing each photo's real tiles, e.g. `{ "hand1.jpg": ["b1", "b2", "b3", "red", "red", "red", ...] }`. Tile codes are in `client/src/lib/tiles.js`.
+2. Run it with one or more models:
+
+```bash
+node --env-file=.env server/scripts/eval-tiles.js eval-photos glm-5.3-flash minimax-m3.1-flash
+```
 
 ## Scoring rules (current implementation)
 
@@ -149,19 +184,23 @@ Example: base 0.10, multiplier 2, 3 tai means 1 unit = 0.40.
 │   │   ├── scoring.js      # Singapore payout rules (pure functions)
 │   │   ├── lobbyService.js # shared DB helpers for lobbies
 │   │   ├── handParser.js   # rule-based "Alice won 3 tai from Bob" parser
-│   │   ├── llm.js          # OpenCode Go client
+│   │   ├── llm.js          # OpenCode Go client (text and images)
+│   │   ├── tiles.js        # tile codes the photo reader may return
 │   │   └── routes/
 │   │       ├── auth.js     # /api/auth/*    register, login, logout, me
 │   │       ├── lobbies.js  # /api/lobbies/* list, create, join, leave, start, hands, undo, finish
-│   │       └── ai.js       # /api/ai/*      tai suggestion, voice parsing, game recap
+│   │       └── ai.js       # /api/ai/*      tai suggestion, photo tiles, voice parsing, game recap
+│   ├── scripts/
+│   │   └── eval-tiles.js   # measure how well a vision model reads tiles
 │   └── test/               # node --test
 └── client/
     ├── index.html
     ├── vite.config.js      # dev proxy /api -> :3001
     └── src/
         ├── main.jsx, App.jsx, api.js, AuthContext.jsx, usePolling.js, useSpeechRecognition.js, styles.css
+        ├── lib/            # plain-JS logic with tests: tiles, handAnalysis (tiles -> tai patterns), taiRules, settlement
         ├── pages/          # LoginPage, LobbiesPage, LobbyPage
-        └── components/     # GameSetupForm, RecordHandForm, VoiceInput, Scoreboard, HandHistory, AiSummary, ...
+        └── components/     # GameSetupForm, RecordHandForm, PhotoScore, VoiceInput, Scoreboard, HandHistory, AiSummary, ...
 ```
 
 ## API overview
@@ -188,6 +227,7 @@ All routes except register and login need a login cookie.
 | POST | `/api/lobbies/:id/finish` | host only |
 | GET | `/api/ai/status` | `{ enabled }` |
 | POST | `/api/ai/tai` | `{ description }` returns `{ tai, breakdown, notes }` |
+| POST | `/api/ai/tiles` | `{ image }` (JPEG/PNG/WebP data URL, up to ~5 MB) returns `{ tiles, unsure, dropped, notes }`. `unsure` holds 0-based positions. The photo is not stored |
 | POST | `/api/ai/lobbies/:id/parse-hand` | `{ transcript }` returns `{ hand: { winnerId, discarderId, tai, payoutMode, missing }, source: 'ai' or 'rules' }`. Works without an AI key |
 | POST | `/api/ai/lobbies/:id/summary` | returns `{ summary }` |
 
@@ -210,7 +250,6 @@ All routes except register and login need a login cookie.
 - Real-time updates with WebSockets or Server-Sent Events, replacing the 3-second polling in `client/src/usePolling.js`
 - Let other players confirm or dispute a recorded hand
 - Game history and stats per player
-- Let the AI read a photo of the winning hand
 - Rate limiting on login and AI routes; deployment (e.g. Render or Fly.io with a persistent disk for SQLite)
 
 ## Open decisions

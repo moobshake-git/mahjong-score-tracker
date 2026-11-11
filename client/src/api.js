@@ -41,6 +41,8 @@ export const api = {
   aiStatus: () => request('GET', '/ai/status'),
   suggestTai: (description) => request('POST', '/ai/tai', { description }),
   gameSummary: (id) => request('POST', `/ai/lobbies/${id}/summary`),
+  // Read the tiles in a photo (data URL). Returns { tiles, unsure, dropped, notes }. The photo is not stored.
+  readTiles: (image) => request('POST', '/ai/tiles', { image }),
   // Turn a spoken/typed sentence into { winnerId, discarderId, tai, payoutMode, missing }. Works without an AI key.
   parseHand: (id, transcript) => request('POST', `/ai/lobbies/${id}/parse-hand`, { transcript }),
 };

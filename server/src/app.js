@@ -10,6 +10,8 @@ import { aiRouter } from './routes/ai.js';
 
 export function createApp(db) {
   const app = express();
+  // Photos of a hand are sent as a data URL, so this one route accepts a larger body.
+  app.use('/api/ai/tiles', express.json({ limit: '8mb' }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 

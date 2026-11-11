@@ -16,3 +16,6 @@ server/data/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Photos for server/scripts/eval-tiles.js (never commit them)
+eval-photos/

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import PhotoScore from './PhotoScore.jsx';
 import TaiCalculator from './TaiCalculator.jsx';
 import VoiceInput from './VoiceInput.jsx';
 import TableView from './TableView.jsx';
@@ -225,6 +226,19 @@ export default function RecordHandForm({ lobby, onRecord }) {
             <span>Tai</span>
             <Chips options={taiOptions} value={tai} onChange={setTai} />
           </div>
+
+          {/* Seat wind is the winner's; if no winner is picked yet, assume the person taking the photo won. */}
+          <PhotoScore
+            key={`photo-${saved}`}
+            taiCap={settings.taiCap}
+            seatWind={windOf(winnerId ?? me)}
+            roundWind={table?.roundWind}
+            onUse={(t, text) => {
+              if (winnerId == null) pickWinner(me);
+              setTai(Math.max(settings.minTai, t));
+              setNote(text);
+            }}
+          />
 
           <details className="ai-box">
             <summary>🧮 Count tai for me</summary>
