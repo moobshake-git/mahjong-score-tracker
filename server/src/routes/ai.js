@@ -4,6 +4,56 @@ import { requireAuth } from '../auth.js';
 import { chat, chatJson, llmEnabled } from '../llm.js';
 import { HttpError, loadLobbyState, requireMember } from '../lobbyService.js';
 import { matchPlayer, parseHandText } from '../handParser.js';
+import { config } from '../config.js';
+import { cleanTiles } from '../tiles.js';
+
+// The vision model only reads tiles. Tai is counted by fixed rules in the app (client/src/lib/handAnalysis.js),
+// so the same tiles always give the same tai and players can see why.
+export const READ_TILES_PROMPT = `You read Mahjong tiles from a photo of a Singapore Mahjong hand.
+List EVERY tile you can see, including flowers, seasons and animals. Read left to right, row by row.
+For a kong (4 identical tiles, sometimes with one face down), list the tile 4 times.
+Use ONLY these codes:
+- Bamboo (sticks; the 1 is usually a bird): b1 b2 b3 b4 b5 b6 b7 b8 b9
+- Characters (a Chinese number above the red character 萬): c1 c2 c3 c4 c5 c6 c7 c8 c9  (一=1 二=2 三=3 四=4 五=5 六=6 七=7 八=8 九=9)
+- Dots / circles: d1 d2 d3 d4 d5 d6 d7 d8 d9 (count the circles)
+- Winds: east (東) south (南) west (西) north (北)
+- Dragons: red (red 中), green (green 發), white (blank, or a blue/black frame)
+- Flowers (usually red/pink or blue with a number 1-4): flower1 flower2 flower3 flower4
+- Seasons (usually with a number 1-4): season1 season2 season3 season4
+- Animals: cat rat rooster centipede
+Most mistakes come from miscounting dots and bamboo. For each of those tiles, count the circles or sticks one by one
+before you write the code (e.g. 2 rows of 3 sticks = b6; 3 rows of 3 circles = d9; 2 columns of 4 sticks = b8).
+A winning hand is usually 4 sets (3 tiles in a row of one suit, or 3-4 identical tiles) plus 1 pair. Use this only to
+decide between two readings of an unclear tile; never add or remove tiles to make the hand fit.
+If you cannot read a tile, still give your best guess and add its position (1 = first tile listed) to "unsure".
+If the photo does not show Mahjong tiles, return an empty list and say so in "notes".
+Reply with ONLY a JSON object, no other text:
+{"tiles": ["b1", ...], "unsure": [<positions>], "notes": "<short note about anything hard to read>"}`;
+
+const IMAGE_DATA_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const MAX_IMAGE_CHARS = 7_000_000; // about 5 MB of image data
+
+/** Ask the vision model which tiles are in a photo. Exported for the evaluation script. */
+export async function readTilesFromImage(image, { model = config.llm.visionModel, sessionId } = {}) {
+  const r = await chatJson(
+    [
+      { role: 'system', content: READ_TILES_PROMPT },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Which tiles are in this photo?' },
+          { type: 'image_url', image_url: { url: image } },
+        ],
+      },
+    ],
+    { temperature: 0, maxTokens: 4000, model, sessionId, timeoutMs: 120_000 },
+  );
+  const { tiles, dropped } = cleanTiles(r.tiles);
+  const unsure = (Array.isArray(r.unsure) ? r.unsure : [])
+    .map((n) => Number(n) - 1)
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < tiles.length);
+  return { tiles, unsure: [...new Set(unsure)], dropped, notes: typeof r.notes === 'string' ? r.notes.slice(0, 300) : '' };
+}
 
 const TAI_SYSTEM_PROMPT = `You are an expert referee for Singapore-style Mahjong.
 The user describes a winning hand. Count its tai using common Singapore rules, for example:
@@ -52,6 +102,17 @@ export function aiRouter(db) {
       breakdown: Array.isArray(result.breakdown) ? result.breakdown : [],
       notes: typeof result.notes === 'string' ? result.notes : '',
     });
+  });
+
+  // Read the tiles in a photo of a winning hand. The photo is only passed to the model and is never stored.
+  // Returns { tiles, unsure, dropped, notes }; the player checks the tiles before the tai is used.
+  router.post('/tiles', async (req, res) => {
+    const image = String(req.body?.image ?? '');
+    if (!image) throw new HttpError(400, 'Take or choose a photo first.');
+    if (image.length > MAX_IMAGE_CHARS) throw new HttpError(413, 'That photo is too large. Try again with a smaller one.');
+    if (!IMAGE_DATA_URL.test(image)) throw new HttpError(400, 'The photo must be a JPEG, PNG or WebP image.');
+    if (!llmEnabled()) throw new HttpError(503, 'Photo scoring needs the AI to be set up (OPENCODE_API_KEY).');
+    res.json(await readTilesFromImage(image));
   });
 
   // Turn a spoken sentence (from the browser's speech-to-text) into a hand for the record form.
@@ -133,7 +194,8 @@ export function aiRouter(db) {
           role: 'system',
           content:
             'You write short, upbeat recaps of Singapore Mahjong games for a group of friends. ' +
-            'Use only the facts given. Mention the leader, notable hands and streaks. Max 120 words. Plain text, no markdown.',
+            'Use only the facts given. Mention the leader, notable hands and streaks. Max 120 words. Plain text, no markdown. ' +
+            "Don't guess anyone's gender: use their names, or they/them.",
         },
         { role: 'user', content: JSON.stringify(facts) },
       ],
