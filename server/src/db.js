@@ -52,6 +52,11 @@ const MIGRATIONS = [
 
   CREATE INDEX idx_hands_lobby ON hands(lobby_id);
   `,
+  // 2: per-hand payout mode ('standard' = normal payout, 'shooter' = shooter pays).
+  //    NULL = use the lobby's default payout_mode (keeps old hands unchanged).
+  `
+  ALTER TABLE hands ADD COLUMN payout_mode TEXT CHECK (payout_mode IN ('standard', 'shooter'));
+  `,
 ];
 
 function migrate(db) {

@@ -62,6 +62,29 @@ test('full game flow: register, password lobby, start, record hands', async () =
   assert.equal(hand.body.lobby.totals[aliceId], 0.8);
   assert.equal(hand.body.lobby.totals[bobId], -0.8);
 
+  // Per-hand payout: shooter pays overrides the lobby's standard payout.
+  // With 2 players both modes cost the discarder the same, so check the stored mode here
+  // (the money difference is covered in scoring.test.js with 4 players).
+  const shooter = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: aliceId, tai: 1, payoutMode: 'shooter' });
+  assert.equal(shooter.status, 201);
+  assert.equal(shooter.body.lobby.hands.at(-1).payoutMode, 'shooter');
+  const selfDrawn = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: null, tai: 1, payoutMode: 'shooter' });
+  assert.equal(selfDrawn.body.lobby.hands.at(-1).payoutMode, null, 'self-drawn hands store no payout mode');
+  const normal = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: aliceId, tai: 1 });
+  assert.equal(normal.body.lobby.hands.at(-1).payoutMode, 'standard', 'defaults to the lobby setting');
+  const bad = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: aliceId, tai: 1, payoutMode: 'nope' });
+  assert.equal(bad.status, 400);
+
+  // Voice parsing works without an AI key (rule-based parser).
+  const parsed = await alice('POST', `/ai/lobbies/${id}/parse-hand`, { transcript: 'bob won 3 tai from alice shooter pay' });
+  assert.equal(parsed.status, 200);
+  assert.equal(parsed.body.source, 'rules');
+  assert.deepEqual(
+    { w: parsed.body.hand.winnerId, d: parsed.body.hand.discarderId, t: parsed.body.hand.tai, p: parsed.body.hand.payoutMode },
+    { w: bobId, d: aliceId, t: 3, p: 'shooter' },
+  );
+
+  for (let i = 0; i < 3; i++) await alice('DELETE', `/lobbies/${id}/hands/last`);
   const undone = await alice('DELETE', `/lobbies/${id}/hands/last`);
   assert.equal(undone.body.lobby.hands.length, 0);
 });

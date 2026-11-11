@@ -60,7 +60,7 @@ export default function LobbyPage() {
         {lobby.settings && (
           <p className="muted small">
             Base {lobby.settings.baseScore} · ×{lobby.settings.multiplier} per tai · {lobby.settings.minTai}–{lobby.settings.taiCap} tai ·{' '}
-            {lobby.settings.payoutMode === 'shooter' ? 'shooter pays all' : 'standard payout'}
+            default: {lobby.settings.payoutMode === 'shooter' ? 'shooter pays all' : 'normal payout'}
           </p>
         )}
         {lobby.status !== 'playing' && <button className="btn-secondary" onClick={onLeave}>Leave lobby</button>}
