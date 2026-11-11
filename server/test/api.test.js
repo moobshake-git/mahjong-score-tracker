@@ -66,6 +66,25 @@ test('full game flow: register, password lobby, start, record hands', async () =
   assert.equal(undone.body.lobby.hands.length, 0);
 });
 
+test('invite link joins a password lobby without the password', async () => {
+  const host = client();
+  const guest = client();
+  const stranger = client();
+  await host('POST', '/auth/register', { username: 'host1', password: 'secret1' });
+  await guest('POST', '/auth/register', { username: 'guest1', password: 'secret1' });
+  await stranger('POST', '/auth/register', { username: 'stranger1', password: 'secret1' });
+
+  const id = (await host('POST', '/lobbies', { name: 'QR table', password: 'pong' })).body.lobby.id;
+  assert.equal((await stranger('GET', `/lobbies/${id}/invite`)).status, 403, 'only members see the invite code');
+  const { code } = (await host('GET', `/lobbies/${id}/invite`)).body;
+  assert.equal(typeof code, 'string');
+
+  assert.equal((await stranger('POST', `/lobbies/${id}/join`, { inviteCode: 'wrong-code-xxxxx' })).status, 403);
+  const joined = await guest('POST', `/lobbies/${id}/join`, { inviteCode: code });
+  assert.equal(joined.status, 200);
+  assert.equal(joined.body.lobby.members.length, 2);
+});
+
 test('requests without login are rejected', async () => {
   const anon = client();
   assert.equal((await anon('GET', '/lobbies')).status, 401);

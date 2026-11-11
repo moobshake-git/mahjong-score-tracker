@@ -1,4 +1,6 @@
 // Database helpers for lobbies, shared by the lobby and AI routes.
+import crypto from 'node:crypto';
+import { config } from './config.js';
 import { computeTotals } from './scoring.js';
 
 export const MAX_PLAYERS = 4;
@@ -34,6 +36,20 @@ export function isMember(db, lobbyId, userId) {
 
 export function requireMember(db, lobbyId, userId) {
   if (!isMember(db, lobbyId, userId)) throw new HttpError(403, 'Join this lobby first.');
+}
+
+/**
+ * Invite code for a lobby, used in the QR code / share link. Anyone with the code can join
+ * without typing the lobby password. It is derived from the server secret, so nothing is stored.
+ */
+export function inviteCode(lobbyId) {
+  return crypto.createHmac('sha256', config.jwtSecret).update(`lobby-invite:${lobbyId}`).digest('base64url').slice(0, 16);
+}
+
+export function isValidInviteCode(lobbyId, code) {
+  const expected = Buffer.from(inviteCode(lobbyId));
+  const given = Buffer.from(String(code ?? ''));
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
 export function settingsOf(lobby) {
