@@ -9,3 +9,10 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# SQLite database files
+server/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
