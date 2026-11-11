@@ -48,6 +48,23 @@ test('rejects invalid hands and settings', () => {
   assert.throws(() => validateSettings({ payoutMode: 'other' }));
 });
 
+test('per-hand payout mode overrides the lobby default', () => {
+  // Lobby default is standard; this hand is "shooter pays".
+  const shooter = handPayments({ winnerId: 1, discarderId: 2, tai: 2, payoutMode: 'shooter' }, players, settings);
+  assert.deepEqual(shooter, { 1: 0.8, 2: -0.8, 3: 0, 4: 0 });
+  // Lobby default is shooter; this hand is "normal payout".
+  const normal = handPayments({ winnerId: 1, discarderId: 2, tai: 2, payoutMode: 'standard' }, players, { ...settings, payoutMode: 'shooter' });
+  assert.deepEqual(normal, { 1: 0.8, 2: -0.4, 3: -0.2, 4: -0.2 });
+  // null = use the lobby default
+  assert.deepEqual(handPayments({ winnerId: 1, discarderId: 2, tai: 2, payoutMode: null }, players, settings), normal);
+  assert.throws(() => handPayments({ winnerId: 1, discarderId: 2, tai: 2, payoutMode: 'other' }, players, settings));
+});
+
+test('per-hand payout mode also works through entryPayments', () => {
+  const d = entryPayments({ kind: 'win', winnerId: 1, discarderId: 2, tai: 2, payoutMode: 'shooter' }, players, settings);
+  assert.deepEqual(d, { 1: 0.8, 2: -0.8, 3: 0, 4: 0 });
+});
+
 test('draws move no money', () => {
   assert.deepEqual(entryPayments({ kind: 'draw' }, players, settings), { 1: 0, 2: 0, 3: 0, 4: 0 });
 });

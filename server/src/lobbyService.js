@@ -55,7 +55,7 @@ export function settingsOf(lobby) {
 export function getHands(db, lobbyId) {
   return db
     .prepare(
-      `SELECT id, kind, winner_id AS winnerId, discarder_id AS discarderId, tai, note, recorded_by AS recordedBy, created_at AS createdAt
+      `SELECT id, kind, winner_id AS winnerId, discarder_id AS discarderId, tai, payout_mode AS payoutMode, note, recorded_by AS recordedBy, created_at AS createdAt
        FROM hands WHERE lobby_id = ? ORDER BY id`,
     )
     .all(lobbyId);

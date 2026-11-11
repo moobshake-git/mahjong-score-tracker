@@ -52,9 +52,14 @@ const MIGRATIONS = [
 
   CREATE INDEX idx_hands_lobby ON hands(lobby_id);
   `,
+  // 2: per-hand payout mode ('standard' = normal payout, 'shooter' = shooter pays).
+  //    NULL = use the lobby's default payout_mode (keeps old hands unchanged).
+  `
+  ALTER TABLE hands ADD COLUMN payout_mode TEXT CHECK (payout_mode IN ('standard', 'shooter'));
+  `,
 
-  // 2: entry kinds (draws, kongs, animal/bonus payouts), first dealer and house rules.
-  // SQLite can't relax NOT NULL on a column, so the hands table is rebuilt.
+  // 3: entry kinds (draws, kongs, animal/bonus payouts), first dealer and house rules.
+  // SQLite can't relax NOT NULL on a column, so the hands table is rebuilt (keeping payout_mode from 2).
   `
   CREATE TABLE hands_new (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,12 +69,13 @@ const MIGRATIONS = [
     winner_id    INTEGER REFERENCES users(id), -- win: winner; payouts: player who is paid; draw: NULL
     discarder_id INTEGER REFERENCES users(id), -- win: NULL = self-drawn; kong_exposed: discarder pays all
     tai          INTEGER,                      -- only for wins
+    payout_mode  TEXT CHECK (payout_mode IN ('standard', 'shooter')), -- only for discard wins; NULL = lobby default
     note         TEXT,
     recorded_by  INTEGER NOT NULL REFERENCES users(id),
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
-  INSERT INTO hands_new (id, lobby_id, kind, winner_id, discarder_id, tai, note, recorded_by, created_at)
-    SELECT id, lobby_id, 'win', winner_id, discarder_id, tai, note, recorded_by, created_at FROM hands;
+  INSERT INTO hands_new (id, lobby_id, kind, winner_id, discarder_id, tai, payout_mode, note, recorded_by, created_at)
+    SELECT id, lobby_id, 'win', winner_id, discarder_id, tai, payout_mode, note, recorded_by, created_at FROM hands;
   DROP TABLE hands;
   ALTER TABLE hands_new RENAME TO hands;
   CREATE INDEX idx_hands_lobby ON hands(lobby_id);

@@ -96,3 +96,11 @@ ol.list { list-style: decimal; padding-left: 20px; }
 .ai-box summary { cursor: pointer; }
 .ai-box[open] summary { margin-bottom: 8px; }
 .summary { white-space: pre-wrap; line-height: 1.5; }
+
+.voice-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.voice-box input { background: var(--card); }
+.warn { color: var(--danger); font-weight: 600; }
+.payout { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.payout legend { font-size: 0.9rem; padding: 0 4px; }
+label.radio { flex-direction: row; align-items: center; gap: 8px; }
+.tag { margin-left: 6px; font-size: 0.75rem; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--neg); color: var(--neg); }

@@ -62,6 +62,29 @@ test('full game flow: register, password lobby, start, record hands', async () =
   assert.equal(hand.body.lobby.totals[aliceId], 0.8);
   assert.equal(hand.body.lobby.totals[bobId], -0.8);
 
+  // Per-hand payout: shooter pays overrides the lobby's standard payout.
+  // With 2 players both modes cost the discarder the same, so check the stored mode here
+  // (the money difference is covered in scoring.test.js with 4 players).
+  const shooter = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: aliceId, tai: 1, payoutMode: 'shooter' });
+  assert.equal(shooter.status, 201);
+  assert.equal(shooter.body.lobby.hands.at(-1).payoutMode, 'shooter');
+  const selfDrawn = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: null, tai: 1, payoutMode: 'shooter' });
+  assert.equal(selfDrawn.body.lobby.hands.at(-1).payoutMode, null, 'self-drawn hands store no payout mode');
+  const normal = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: aliceId, tai: 1 });
+  assert.equal(normal.body.lobby.hands.at(-1).payoutMode, 'standard', 'defaults to the lobby setting');
+  const bad = await bob('POST', `/lobbies/${id}/hands`, { winnerId: bobId, discarderId: aliceId, tai: 1, payoutMode: 'nope' });
+  assert.equal(bad.status, 400);
+
+  // Voice parsing works without an AI key (rule-based parser).
+  const parsed = await alice('POST', `/ai/lobbies/${id}/parse-hand`, { transcript: 'bob won 3 tai from alice shooter pay' });
+  assert.equal(parsed.status, 200);
+  assert.equal(parsed.body.source, 'rules');
+  assert.deepEqual(
+    { w: parsed.body.hand.winnerId, d: parsed.body.hand.discarderId, t: parsed.body.hand.tai, p: parsed.body.hand.payoutMode },
+    { w: bobId, d: aliceId, t: 3, p: 'shooter' },
+  );
+
+  for (let i = 0; i < 3; i++) await alice('DELETE', `/lobbies/${id}/hands/last`);
   const undone = await alice('DELETE', `/lobbies/${id}/hands/last`);
   assert.equal(undone.body.lobby.hands.length, 0);
 });
@@ -121,14 +144,14 @@ test('winds, instant payouts, draws and undo by the recorder', async () => {
   assert.equal(r.body.lobby.hands.length, 4);
 });
 
-test('migration keeps hands recorded before entry kinds existed', async () => {
+test('migration keeps hands (and their per-hand payout mode) recorded before entry kinds existed', async () => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
   const { default: Database } = await import('better-sqlite3');
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mj-')), 'old.db');
 
-  // Build a version-1 database by hand, with one lobby and one hand.
+  // Build a version-2 database by hand (per-hand payout mode, no entry kinds), with one lobby and one hand.
   const old = new Database(file);
   old.exec(`
     CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')));
@@ -142,8 +165,9 @@ test('migration keeps hands recorded before entry kinds existed', async () => {
     INSERT INTO users (username, password_hash) VALUES ('a', 'x'), ('b', 'x');
     INSERT INTO lobbies (name, host_id, status, base_score, multiplier, min_tai, tai_cap, payout_mode) VALUES ('Old', 1, 'playing', 0.1, 2, 1, 5, 'standard');
     INSERT INTO lobby_members (lobby_id, user_id) VALUES (1, 1), (1, 2);
-    INSERT INTO hands (lobby_id, winner_id, discarder_id, tai, recorded_by) VALUES (1, 1, 2, 2, 1);
-    PRAGMA user_version = 1;
+    ALTER TABLE hands ADD COLUMN payout_mode TEXT CHECK (payout_mode IN ('standard', 'shooter'));
+    INSERT INTO hands (lobby_id, winner_id, discarder_id, tai, payout_mode, recorded_by) VALUES (1, 1, 2, 2, 'shooter', 1);
+    PRAGMA user_version = 2;
   `);
   old.close();
 
@@ -152,6 +176,7 @@ test('migration keeps hands recorded before entry kinds existed', async () => {
   const state = loadLobbyState(db, 1);
   assert.equal(state.hands.length, 1);
   assert.equal(state.hands[0].kind, 'win');
+  assert.equal(state.hands[0].payoutMode, 'shooter');
   assert.equal(state.totals[1], 0.4);
   assert.equal(state.settings.drawRotates, false);
   assert.equal(state.table.dealerId, 1, 'old lobbies default to the first player as dealer, who won and kept the deal');

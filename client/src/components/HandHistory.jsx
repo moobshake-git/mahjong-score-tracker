@@ -5,7 +5,7 @@ const PAYOUT_LABELS = {
   bonus_set: 'full bonus set',
 };
 
-function describe(h, nameOf) {
+function describe(h, nameOf, payoutMode) {
   const who = <strong>{nameOf(h.winnerId)}</strong>;
   if (h.kind === 'draw') return <>Drawn hand (no winner)</>;
   if (PAYOUT_LABELS[h.kind]) {
@@ -19,6 +19,7 @@ function describe(h, nameOf) {
   return (
     <>
       {who} won {h.tai} tai {h.discarderId ? <>off <strong>{nameOf(h.discarderId)}</strong></> : '(self-drawn)'}
+      {h.discarderId && (h.payoutMode ?? payoutMode) === 'shooter' && <span className="tag">shooter pays</span>}
     </>
   );
 }
@@ -31,7 +32,7 @@ export default function HandHistory({ lobby, nameOf }) {
       <ol className="list small">
         {[...lobby.hands].reverse().map((h) => (
           <li key={h.id}>
-            {describe(h, nameOf)}
+            {describe(h, nameOf, lobby.settings.payoutMode)}
             {h.note && <span className="muted"> – {h.note}</span>}
             <div className="muted tiny">
               {h.roundWind} round · {nameOf(h.dealerId)} dealing · recorded by {nameOf(h.recordedBy)}

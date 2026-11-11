@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import TaiCalculator from './TaiCalculator.jsx';
+import VoiceInput from './VoiceInput.jsx';
 
 const PAYOUT_TYPES = [
   { kind: 'kong_concealed', key: 'kongConcealed', label: 'Concealed kong' },
@@ -35,9 +36,12 @@ export default function RecordHandForm({ lobby, onRecord }) {
   const [winnerId, setWinnerId] = useState(null);
   const [discarderId, setDiscarderId] = useState(undefined); // undefined = not chosen yet, null = self-drawn
   const [tai, setTai] = useState(null);
+  // 'standard' = normal payout, 'shooter' = shooter pays. Starts at the lobby default each hand.
+  const [payoutMode, setPayoutMode] = useState(settings.payoutMode);
   const [payoutKind, setPayoutKind] = useState(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(0); // bumps after each save so the voice box starts fresh
 
   // AI tai helper
   const [description, setDescription] = useState('');
@@ -58,6 +62,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
     setWinnerId(null);
     setDiscarderId(undefined);
     setTai(null);
+    setPayoutMode(settings.payoutMode);
     setPayoutKind(null);
     setNote('');
     setDescription('');
@@ -69,11 +74,21 @@ export default function RecordHandForm({ lobby, onRecord }) {
     if (discarderId === id) setDiscarderId(undefined);
   }
 
+  // Fill the form from what the player said (see VoiceInput). The player still checks it and presses Save.
+  function onParsed(hand) {
+    if (hand.winnerId) setWinnerId(hand.winnerId);
+    if (hand.selfDrawn) setDiscarderId(null);
+    else if (hand.discarderId && hand.discarderId !== hand.winnerId) setDiscarderId(hand.discarderId);
+    if (hand.tai != null) setTai(Math.max(settings.minTai, Math.min(hand.tai, settings.taiCap)));
+    setPayoutMode(hand.payoutMode || settings.payoutMode);
+  }
+
   async function save(entry) {
     setBusy(true);
     try {
       await onRecord({ ...entry, note: note || undefined });
       reset();
+      setSaved((n) => n + 1);
     } catch {
       /* error shown by parent */
     } finally {
@@ -101,7 +116,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
 
   const winReady = winnerId != null && discarderId !== undefined && tai != null;
   const winSummary = winReady
-    ? `${nameOf(winnerId)} won ${tai} tai ${discarderId == null ? '(self-drawn)' : `off ${nameOf(discarderId)}`}`
+    ? `${nameOf(winnerId)} won ${tai} tai ${discarderId == null ? '(self-drawn)' : `off ${nameOf(discarderId)}${payoutMode === 'shooter' ? ', shooter pays' : ''}`}`
     : 'Pick winner, who paid and tai';
   const payoutReady = payoutKind != null && winnerId != null;
 
@@ -124,6 +139,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
 
       {mode === 'win' && (
         <div className="stack">
+          <VoiceInput key={saved} lobbyId={lobby.id} onParsed={onParsed} />
           <div className="field">
             <span>Who won?</span>
             <Chips options={playerChips(allIds)} value={winnerId} onChange={pickWinner} />
@@ -136,6 +152,19 @@ export default function RecordHandForm({ lobby, onRecord }) {
               onChange={setDiscarderId}
             />
           </div>
+          {discarderId != null && (
+            <div className="field">
+              <span>Payout for this hand</span>
+              <Chips
+                options={[
+                  { value: 'standard', label: 'Normal (shooter 2×, others 1×)' },
+                  { value: 'shooter', label: 'Shooter pays all' },
+                ]}
+                value={payoutMode}
+                onChange={setPayoutMode}
+              />
+            </div>
+          )}
           <div className="field">
             <span>Tai</span>
             <Chips options={taiOptions} value={tai} onChange={setTai} />
@@ -183,7 +212,7 @@ export default function RecordHandForm({ lobby, onRecord }) {
           <button
             type="button"
             disabled={!winReady || busy}
-            onClick={() => save({ kind: 'win', winnerId, discarderId, tai })}
+            onClick={() => save({ kind: 'win', winnerId, discarderId, tai, payoutMode: discarderId != null ? payoutMode : undefined })}
           >
             {winReady ? `Save: ${winSummary}` : winSummary}
           </button>
