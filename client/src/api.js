@@ -32,6 +32,9 @@ export const api = {
   startGame: (id, settings) => request('POST', `/lobbies/${id}/start`, { settings }),
   recordHand: (id, hand) => request('POST', `/lobbies/${id}/hands`, hand),
   undoHand: (id) => request('DELETE', `/lobbies/${id}/hands/last`),
+  // { seatOrder: [userId, ...], dealerId, roundWind: 0-3 } - host only, mid-game
+  fixTable: (id, table) => request('POST', `/lobbies/${id}/table`, table),
+  undoTableFix: (id) => request('DELETE', `/lobbies/${id}/table/last`),
   finishGame: (id) => request('POST', `/lobbies/${id}/finish`),
 
   // AI (LLM via OpenCode Go)

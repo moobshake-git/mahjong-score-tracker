@@ -4,6 +4,8 @@ import { useAuth } from '../AuthContext.jsx';
 import PhotoScore from './PhotoScore.jsx';
 import TaiCalculator from './TaiCalculator.jsx';
 import VoiceInput from './VoiceInput.jsx';
+import TableView from './TableView.jsx';
+import { previewWin } from '../lib/payments.js';
 
 const PAYOUT_TYPES = [
   { kind: 'kong_concealed', key: 'kongConcealed', label: 'Concealed kong' },
@@ -72,6 +74,19 @@ export default function RecordHandForm({ lobby, onRecord }) {
     setAiResult(null);
   }
 
+  // Table taps: first tap picks the winner, second picks who shot (tap the winner again to undo).
+  // Once both are picked, tapping a seat starts again with that player as the winner.
+  function tapSeat(id) {
+    if (winnerId == null || discarderId !== undefined) {
+      setWinnerId(id);
+      setDiscarderId(undefined);
+    } else if (id === winnerId) {
+      setWinnerId(null);
+    } else {
+      setDiscarderId(id);
+    }
+  }
+
   function pickWinner(id) {
     setWinnerId(id);
     if (discarderId === id) setDiscarderId(undefined);
@@ -123,6 +138,25 @@ export default function RecordHandForm({ lobby, onRecord }) {
     : 'Pick winner, who paid and tai';
   const payoutReady = payoutKind != null && winnerId != null;
 
+  // Payment arrows on the table: shown once winner and payer are picked (amounts once tai is too).
+  const seatOrder = table?.seatOrder ?? allIds;
+  const flows =
+    winnerId != null && discarderId !== undefined
+      ? Object.entries(
+          tai != null
+            ? previewWin({ winnerId, discarderId, tai, payoutMode }, allIds, settings)
+            : previewWin({ winnerId, discarderId, tai: settings.minTai || 1, payoutMode }, allIds, settings),
+        )
+          .filter(([, v]) => v < 0)
+          .map(([id, v]) => ({ from: Number(id), amount: tai != null ? -v : null }))
+      : [];
+  const tablePrompt =
+    winnerId == null
+      ? "Tap the winner's seat"
+      : discarderId === undefined
+        ? `Who shot? Tap their seat, or the middle if ${realName(winnerId)} self-drew`
+        : 'Tap a seat to start again';
+
   return (
     <section className="card">
       <div className="row between wrap">
@@ -144,16 +178,36 @@ export default function RecordHandForm({ lobby, onRecord }) {
         <div className="stack">
           <VoiceInput key={saved} lobbyId={lobby.id} onParsed={onParsed} />
           <div className="field">
-            <span>Who won?</span>
-            <Chips options={playerChips(allIds)} value={winnerId} onChange={pickWinner} />
-          </div>
-          <div className="field">
-            <span>Who paid?</span>
-            <Chips
-              options={[{ value: null, label: 'Self-drawn' }, ...playerChips(others).map((o) => ({ ...o, label: `${o.label} shot` }))]}
-              value={discarderId}
-              onChange={setDiscarderId}
+            <span>{tablePrompt}</span>
+            <TableView
+              label="Table: tap the winner, then who shot"
+              seatOrder={seatOrder}
+              nameOf={Object.fromEntries(allIds.map((id) => [id, nameOf(id)]))}
+              seatWinds={table?.seatWinds ?? {}}
+              dealerId={table?.dealerId}
+              roundWind={table?.roundWind ?? 'East'}
+              totals={lobby.totals}
+              anchorId={me}
+              marks={{
+                ...(winnerId != null ? { [winnerId]: 'winner' } : {}),
+                ...(discarderId != null ? { [discarderId]: 'payer' } : {}),
+              }}
+              flows={flows}
+              flowTo={winnerId}
+              onSeat={tapSeat}
+              onCenter={winnerId != null ? () => setDiscarderId(null) : undefined}
+              centerHint={winnerId != null && discarderId === undefined ? 'Tap for self-drawn' : discarderId === null ? 'Self-drawn' : undefined}
             />
+            <div className="chips">
+              <button type="button" className={`chip ${discarderId === null ? 'on' : ''}`} disabled={winnerId == null} onClick={() => setDiscarderId(null)}>
+                Self-drawn
+              </button>
+              {winnerId != null && (
+                <button type="button" className="chip" onClick={() => { setWinnerId(null); setDiscarderId(undefined); }}>
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
           {discarderId != null && (
             <div className="field">

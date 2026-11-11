@@ -77,6 +77,21 @@ export function getHands(db, lobbyId) {
     .all(lobbyId);
 }
 
+export function getAdjustments(db, lobbyId) {
+  return db
+    .prepare('SELECT id, position, seat_order AS seatOrder, dealer_id AS dealerId, round_wind AS roundWind FROM table_adjustments WHERE lobby_id = ? ORDER BY id')
+    .all(lobbyId)
+    .map((a) => ({ ...a, seatOrder: JSON.parse(a.seatOrder) }));
+}
+
+/** Seating at the start of the game: the order the host chose, or join order. */
+export function startingSeatOrder(lobby, members) {
+  const ids = members.map((m) => m.id);
+  const chosen = lobby.seat_order ? JSON.parse(lobby.seat_order) : null;
+  // Fall back to join order if the saved order no longer matches the players (e.g. before the game starts).
+  return chosen && chosen.length === ids.length && chosen.every((id) => ids.includes(id)) ? chosen : ids;
+}
+
 /** Everything the lobby page needs, in one object. */
 export function loadLobbyState(db, lobbyId) {
   const lobby = getLobbyRow(db, lobbyId);
@@ -88,8 +103,14 @@ export function loadLobbyState(db, lobbyId) {
     ? computeTotals(hands, playerIds, settings)
     : { totals: Object.fromEntries(playerIds.map((id) => [id, 0])), history: [] };
   // Winds and dealer. Only meaningful once the game has started.
+  const adjustments = settings ? getAdjustments(db, lobbyId) : [];
   const table = settings
-    ? computeTableState(hands, playerIds, { firstDealerId: lobby.first_dealer_id, drawRotates: settings.drawRotates })
+    ? computeTableState(hands, startingSeatOrder(lobby, members), {
+        firstDealerId: lobby.first_dealer_id,
+        drawRotates: settings.drawRotates,
+        startRound: lobby.start_round,
+        adjustments,
+      })
     : null;
 
   return {
@@ -104,7 +125,7 @@ export function loadLobbyState(db, lobbyId) {
     settings,
     members,
     totals,
-    table: table?.current ?? null,
+    table: table ? { ...table.current, adjustments: adjustments.length } : null,
     hands: history.map((h, i) => ({ ...h, ...table.perEntry[i] })),
   };
 }

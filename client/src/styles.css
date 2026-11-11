@@ -1,4 +1,11 @@
 :root {
+  --felt: #dcebe2;
+  --flow: #c2552b;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #b98000;
+  --grid: #e1e0d9;
   --bg: #f4f1ea;
   --card: #ffffff;
   --text: #1f2a24;
@@ -22,6 +29,13 @@
     --primary: #39a96e;
     --pos: #5cc98d;
     --neg: #ef7b72;
+    --felt: #1f3a2d;
+    --flow: #ef8a5e;
+    --series-1: #3987e5;
+    --series-2: #e8703f;
+    --series-3: #24c08a;
+    --series-4: #d9a020;
+    --grid: #2c2c2a;
   }
 }
 
@@ -107,6 +121,80 @@ ol.list { list-style: decimal; padding-left: 20px; }
 .payout legend { font-size: 0.9rem; padding: 0 4px; }
 label.radio { flex-direction: row; align-items: center; gap: 8px; }
 .tag { margin-left: 6px; font-size: 0.75rem; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--neg); color: var(--neg); }
+
+/* Table view (TableView.jsx): a square table with a seat on each side */
+.table-view { position: relative; width: 100%; max-width: 380px; aspect-ratio: 1; margin: 4px auto; }
+.table-view > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.table-view > svg.flows { pointer-events: none; z-index: 1; }
+.table-view .felt { fill: var(--felt); }
+.table-view .flow path:first-child { fill: none; stroke: var(--flow); stroke-width: 2.5; stroke-linecap: round; }
+.table-view .flow-head { stroke: var(--flow); }
+.table-view .flow text {
+  font-size: 12px; font-weight: 600; fill: var(--flow);
+  paint-order: stroke; stroke: var(--felt); stroke-width: 4px; stroke-linejoin: round;
+}
+.table-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 25%; aspect-ratio: 1; border-radius: 50%; padding: 2px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  background: var(--card); color: var(--text); border: 1px solid var(--border); line-height: 1.15;
+}
+.table-center:disabled { opacity: 1; cursor: default; }
+.table-center .hint { color: var(--primary); }
+.wind-char { font-size: 1.35rem; line-height: 1; font-weight: 600; }
+.wind-char.big { font-size: 1.6rem; }
+.seat {
+  position: absolute; transform: translate(-50%, -50%); width: 38%; min-height: 52px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; text-align: left;
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+}
+.seat:disabled { opacity: 1; cursor: default; }
+.seat-bottom { left: 50%; top: 88%; }
+.seat-top { left: 50%; top: 12%; }
+.seat-left { left: 18%; top: 50%; width: 33%; }
+.seat-right { left: 82%; top: 50%; width: 33%; }
+.seat-text { display: flex; flex-direction: column; min-width: 0; }
+.seat-name { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-score { font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--muted); }
+.seat.is-dealer { border: 2px solid var(--primary); }
+.dealer-pill {
+  position: absolute; top: -9px; right: 6px; font-size: 0.65rem; padding: 0 6px; border-radius: 999px;
+  background: var(--primary); color: var(--primary-text);
+}
+.seat.mark-winner { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+.seat.mark-winner .seat-score { color: var(--primary-text); }
+.seat.mark-payer { border-color: var(--flow); box-shadow: 0 0 0 2px var(--flow) inset; }
+.seat.mark-selected { box-shadow: 0 0 0 3px var(--primary) inset; }
+
+/* Progress strip (ProgressStrip.jsx): one group per round, one box per deal */
+.progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: 4px 0 12px; }
+@media (min-width: 600px) { .progress { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.progress-round { display: flex; align-items: center; gap: 3px; }
+.progress-round .wind-char { font-size: 1rem; width: 1.4em; color: var(--muted); }
+.slot {
+  flex: 1; height: 24px; border-radius: 4px; border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; letter-spacing: -1px; color: var(--muted);
+}
+.slot.done { background: var(--bg); }
+.slot.now { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+
+/* Score chart (ScoreChart.jsx) */
+.score-chart { width: 100%; height: auto; touch-action: pan-y; }
+.score-chart .grid { stroke: var(--grid); stroke-width: 1; }
+.score-chart .zero { stroke: var(--muted); stroke-width: 1; }
+.score-chart .cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.score-chart .axis { font-size: 11px; fill: var(--muted); }
+.score-chart polyline { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.series-1 { stroke: var(--series-1); fill: var(--series-1); }
+.series-2 { stroke: var(--series-2); fill: var(--series-2); }
+.series-3 { stroke: var(--series-3); fill: var(--series-3); }
+.series-4 { stroke: var(--series-4); fill: var(--series-4); }
+.score-chart circle { stroke: var(--card); stroke-width: 2; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.85rem; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.chart-legend line { stroke-width: 2.5; }
+.summary-heading { cursor: pointer; font-weight: 600; }
 
 /* Photo scoring */
 label.btn-file {

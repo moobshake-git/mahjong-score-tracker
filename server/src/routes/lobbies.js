@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { requireAuth } from '../auth.js';
 import { validateSettings, entryPayments, ENTRY_KINDS } from '../scoring.js';
+import { validateSeatOrder, validateRoundWind } from '../table.js';
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -129,14 +130,21 @@ export function lobbiesRouter(db) {
     if (!members.some((m) => m.id === firstDealerId)) throw new HttpError(400, 'First dealer must be a player in this lobby.');
 
     let s;
+    let seatOrder;
+    let startRound;
     try {
       s = validateSettings(req.body?.settings);
+      // Seating (turn order round the table). Defaults to join order.
+      const rawOrder = req.body?.settings?.seatOrder;
+      seatOrder = rawOrder == null ? members.map((m) => m.id) : validateSeatOrder(rawOrder, members.map((m) => m.id));
+      startRound = validateRoundWind(req.body?.settings?.startRound);
     } catch (err) {
       throw new HttpError(400, err.message);
     }
     db.prepare(
       `UPDATE lobbies SET status = 'playing', base_score = ?, multiplier = ?, min_tai = ?, tai_cap = ?, payout_mode = ?,
-       draw_rotates = ?, instant_payouts = ?, first_dealer_id = ?, started_at = datetime('now') WHERE id = ?`,
+       draw_rotates = ?, instant_payouts = ?, first_dealer_id = ?, seat_order = ?, start_round = ?,
+       started_at = datetime('now') WHERE id = ?`,
     ).run(
       s.baseScore,
       s.multiplier,
@@ -146,6 +154,8 @@ export function lobbiesRouter(db) {
       s.drawRotates ? 1 : 0,
       JSON.stringify(s.instantPayouts),
       firstDealerId,
+      JSON.stringify(seatOrder),
+      startRound,
       id,
     );
     res.json({ lobby: loadLobbyState(db, id) });
@@ -193,6 +203,44 @@ export function lobbiesRouter(db) {
       throw new HttpError(403, 'Only the host or the person who recorded it can undo this.');
     }
     db.prepare('DELETE FROM hands WHERE id = ?').run(last.id);
+    res.json({ lobby: loadLobbyState(db, id) });
+  });
+
+  // Fix the table mid-game (host only): seating order, who is dealing, and the round wind.
+  // Takes effect from now on; hands already recorded keep the dealer and winds they had.
+  // Body: { seatOrder: [userId, ...], dealerId, roundWind: 0-3 }
+  router.post('/:id/table', (req, res) => {
+    const id = lobbyId(req);
+    const lobby = getLobbyRow(db, id);
+    requireHost(lobby, req.user.id);
+    if (lobby.status !== 'playing') throw new HttpError(409, 'The game is not in progress.');
+    const playerIds = getMembers(db, id).map((m) => m.id);
+    let seatOrder;
+    let roundWind;
+    try {
+      seatOrder = validateSeatOrder(req.body?.seatOrder, playerIds);
+      roundWind = validateRoundWind(req.body?.roundWind);
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+    const dealerId = Number(req.body?.dealerId);
+    if (!playerIds.includes(dealerId)) throw new HttpError(400, 'Dealer must be a player at this table.');
+    const { count } = db.prepare('SELECT COUNT(*) AS count FROM hands WHERE lobby_id = ?').get(id);
+    db.prepare(
+      'INSERT INTO table_adjustments (lobby_id, position, seat_order, dealer_id, round_wind, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(id, count, JSON.stringify(seatOrder), dealerId, roundWind, req.user.id);
+    res.status(201).json({ lobby: loadLobbyState(db, id) });
+  });
+
+  // Undo the most recent table fix (host only).
+  router.delete('/:id/table/last', (req, res) => {
+    const id = lobbyId(req);
+    const lobby = getLobbyRow(db, id);
+    requireHost(lobby, req.user.id);
+    if (lobby.status !== 'playing') throw new HttpError(409, 'The game is not in progress.');
+    const last = db.prepare('SELECT id FROM table_adjustments WHERE lobby_id = ? ORDER BY id DESC LIMIT 1').get(id);
+    if (!last) throw new HttpError(404, 'No table changes to undo.');
+    db.prepare('DELETE FROM table_adjustments WHERE id = ?').run(last.id);
     res.json({ lobby: loadLobbyState(db, id) });
   });
 

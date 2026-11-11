@@ -1,3 +1,5 @@
+import ProgressStrip from './ProgressStrip.jsx';
+
 export default function Scoreboard({ lobby }) {
   const rows = [...lobby.members].sort((a, b) => (lobby.totals[b.id] ?? 0) - (lobby.totals[a.id] ?? 0));
   const { table } = lobby;
@@ -13,6 +15,7 @@ export default function Scoreboard({ lobby }) {
           </span>
         )}
       </div>
+      {table && <ProgressStrip table={table} hands={lobby.hands} />}
       <table className="table">
         <tbody>
           {rows.map((m) => {

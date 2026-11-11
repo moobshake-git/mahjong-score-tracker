@@ -201,3 +201,47 @@ test('migration keeps hands (and their per-hand payout mode) recorded before ent
   assert.equal(state.table.dealerId, 1, 'old lobbies default to the first player as dealer, who won and kept the deal');
   db.close();
 });
+
+test('seating at setup and mid-game table fixes', async () => {
+  const h = client();
+  const b = client();
+  const c = client();
+  await h('POST', '/auth/register', { username: 'tv_host', password: 'secret1' });
+  await b('POST', '/auth/register', { username: 'tv_b', password: 'secret1' });
+  await c('POST', '/auth/register', { username: 'tv_c', password: 'secret1' });
+  const id = (await h('POST', '/lobbies', { name: 'Table view' })).body.lobby.id;
+  await b('POST', `/lobbies/${id}/join`, {});
+  await c('POST', `/lobbies/${id}/join`, {});
+  const [hId, bId, cId] = (await h('GET', `/lobbies/${id}`)).body.lobby.members.map((m) => m.id);
+
+  const bad = await h('POST', `/lobbies/${id}/start`, { settings: { seatOrder: [hId, bId] } });
+  assert.equal(bad.status, 400, 'seat order must include everyone');
+
+  // Seated host, c, b; b deals first; game starts in the South round.
+  let r = await h('POST', `/lobbies/${id}/start`, { settings: { seatOrder: [hId, cId, bId], firstDealerId: bId, startRound: 1 } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.lobby.table.seatOrder, [hId, cId, bId]);
+  assert.equal(r.body.lobby.table.roundWind, 'South');
+  assert.deepEqual(r.body.lobby.table.seatWinds, { [bId]: 'East', [hId]: 'South', [cId]: 'West' });
+
+  // b (dealer) wins → keeps the deal.
+  await b('POST', `/lobbies/${id}/hands`, { winnerId: bId, discarderId: null, tai: 1 });
+
+  // Only the host can fix the table.
+  assert.equal((await b('POST', `/lobbies/${id}/table`, { seatOrder: [hId, bId, cId], dealerId: cId, roundWind: 0 })).status, 403);
+  assert.equal((await h('POST', `/lobbies/${id}/table`, { seatOrder: [hId, bId], dealerId: cId, roundWind: 0 })).status, 400);
+  assert.equal((await h('POST', `/lobbies/${id}/table`, { seatOrder: [hId, bId, cId], dealerId: 999, roundWind: 0 })).status, 400);
+
+  r = await h('POST', `/lobbies/${id}/table`, { seatOrder: [hId, bId, cId], dealerId: cId, roundWind: 0 });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.lobby.table.dealerId, cId);
+  assert.equal(r.body.lobby.table.roundWind, 'East');
+  assert.equal(r.body.lobby.table.adjustments, 1);
+  assert.equal(r.body.lobby.hands[0].dealerId, bId, 'the earlier hand keeps its dealer');
+  assert.equal(r.body.lobby.hands[0].roundWind, 'South');
+
+  r = await h('DELETE', `/lobbies/${id}/table/last`);
+  assert.equal(r.body.lobby.table.dealerId, bId);
+  assert.equal(r.body.lobby.table.adjustments, 0);
+  assert.equal((await h('DELETE', `/lobbies/${id}/table/last`)).status, 404);
+});
