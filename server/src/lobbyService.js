@@ -1,5 +1,6 @@
 // Database helpers for lobbies, shared by the lobby and AI routes.
-import { computeTotals } from './scoring.js';
+import { computeTotals, DEFAULT_INSTANT_PAYOUTS } from './scoring.js';
+import { computeTableState } from './table.js';
 
 export const MAX_PLAYERS = 4;
 // Singapore Mahjong is played with 4, but 2+ is allowed so you can test with fewer accounts.
@@ -44,13 +45,15 @@ export function settingsOf(lobby) {
     minTai: lobby.min_tai,
     taiCap: lobby.tai_cap,
     payoutMode: lobby.payout_mode,
+    drawRotates: Boolean(lobby.draw_rotates),
+    instantPayouts: { ...DEFAULT_INSTANT_PAYOUTS, ...(lobby.instant_payouts ? JSON.parse(lobby.instant_payouts) : {}) },
   };
 }
 
 export function getHands(db, lobbyId) {
   return db
     .prepare(
-      `SELECT id, winner_id AS winnerId, discarder_id AS discarderId, tai, note, recorded_by AS recordedBy, created_at AS createdAt
+      `SELECT id, kind, winner_id AS winnerId, discarder_id AS discarderId, tai, note, recorded_by AS recordedBy, created_at AS createdAt
        FROM hands WHERE lobby_id = ? ORDER BY id`,
     )
     .all(lobbyId);
@@ -66,6 +69,10 @@ export function loadLobbyState(db, lobbyId) {
   const { totals, history } = settings
     ? computeTotals(hands, playerIds, settings)
     : { totals: Object.fromEntries(playerIds.map((id) => [id, 0])), history: [] };
+  // Winds and dealer. Only meaningful once the game has started.
+  const table = settings
+    ? computeTableState(hands, playerIds, { firstDealerId: lobby.first_dealer_id, drawRotates: settings.drawRotates })
+    : null;
 
   return {
     id: lobby.id,
@@ -79,6 +86,7 @@ export function loadLobbyState(db, lobbyId) {
     settings,
     members,
     totals,
-    hands: history,
+    table: table?.current ?? null,
+    hands: history.map((h, i) => ({ ...h, ...table.perEntry[i] })),
   };
 }

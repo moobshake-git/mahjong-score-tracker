@@ -52,6 +52,32 @@ const MIGRATIONS = [
 
   CREATE INDEX idx_hands_lobby ON hands(lobby_id);
   `,
+
+  // 2: entry kinds (draws, kongs, animal/bonus payouts), first dealer and house rules.
+  // SQLite can't relax NOT NULL on a column, so the hands table is rebuilt.
+  `
+  CREATE TABLE hands_new (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    lobby_id     INTEGER NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL DEFAULT 'win'
+                 CHECK (kind IN ('win', 'draw', 'kong_concealed', 'kong_exposed', 'animal_pair', 'bonus_set')),
+    winner_id    INTEGER REFERENCES users(id), -- win: winner; payouts: player who is paid; draw: NULL
+    discarder_id INTEGER REFERENCES users(id), -- win: NULL = self-drawn; kong_exposed: discarder pays all
+    tai          INTEGER,                      -- only for wins
+    note         TEXT,
+    recorded_by  INTEGER NOT NULL REFERENCES users(id),
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  INSERT INTO hands_new (id, lobby_id, kind, winner_id, discarder_id, tai, note, recorded_by, created_at)
+    SELECT id, lobby_id, 'win', winner_id, discarder_id, tai, note, recorded_by, created_at FROM hands;
+  DROP TABLE hands;
+  ALTER TABLE hands_new RENAME TO hands;
+  CREATE INDEX idx_hands_lobby ON hands(lobby_id);
+
+  ALTER TABLE lobbies ADD COLUMN first_dealer_id INTEGER REFERENCES users(id);
+  ALTER TABLE lobbies ADD COLUMN draw_rotates INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE lobbies ADD COLUMN instant_payouts TEXT; -- JSON, see DEFAULT_INSTANT_PAYOUTS in scoring.js
+  `,
 ];
 
 function migrate(db) {

@@ -11,7 +11,35 @@
 //
 // "unit" = baseScore * multiplier ^ (min(tai, taiCap) - 1)
 //
-// TODO (open decisions in README): bonus tiles / animals instant payouts, kong payouts.
+// Instant payouts (paid straight away, not tied to winning the hand). Amounts are in
+// "base units" (multiples of baseScore) and each other player pays that amount:
+//   kongConcealed - concealed kong (default 2)
+//   kongExposed   - exposed kong (default 1). If it was made from someone's discard,
+//                   that discarder pays for the whole table instead.
+//   animalPair    - cat + rat, or rooster + centipede (default 1)
+//   bonusSet      - all 4 flowers, all 4 seasons, or all 4 animals (default 2)
+// House rules vary a lot here, so the host can change every amount in game setup.
+//
+// Every row in the hands table is an "entry" with a kind:
+//   win                      - { winnerId, discarderId|null, tai }
+//   draw                     - nobody won; no money moves (matters for dealer rotation)
+//   kong_concealed, kong_exposed, animal_pair, bonus_set
+//                            - { winnerId: the player who is paid, discarderId? (kong_exposed only) }
+
+export const INSTANT_KINDS = Object.freeze({
+  kong_concealed: 'kongConcealed',
+  kong_exposed: 'kongExposed',
+  animal_pair: 'animalPair',
+  bonus_set: 'bonusSet',
+});
+export const ENTRY_KINDS = Object.freeze(['win', 'draw', ...Object.keys(INSTANT_KINDS)]);
+
+export const DEFAULT_INSTANT_PAYOUTS = Object.freeze({
+  kongConcealed: 2,
+  kongExposed: 1,
+  animalPair: 1,
+  bonusSet: 2,
+});
 
 export const DEFAULT_SETTINGS = Object.freeze({
   baseScore: 0.1,
@@ -19,6 +47,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   minTai: 1,
   taiCap: 5,
   payoutMode: 'standard',
+  drawRotates: false, // false: dealer keeps the deal after a drawn hand
+  instantPayouts: DEFAULT_INSTANT_PAYOUTS,
 });
 
 /** Validate and normalise settings coming from the client. Throws on bad input. */
@@ -35,12 +65,22 @@ export function validateSettings(input = {}) {
   if (!Number.isInteger(s.minTai) || s.minTai < 0) throw new Error('Minimum tai must be a whole number (0 or more).');
   if (!Number.isInteger(s.taiCap) || s.taiCap < Math.max(1, s.minTai)) throw new Error('Tai cap must be a whole number no smaller than the minimum tai.');
   if (!['standard', 'shooter'].includes(s.payoutMode)) throw new Error("Payout mode must be 'standard' or 'shooter'.");
+
+  const instant = { ...DEFAULT_INSTANT_PAYOUTS, ...(s.instantPayouts || {}) };
+  for (const key of Object.keys(DEFAULT_INSTANT_PAYOUTS)) {
+    instant[key] = num(instant[key]);
+    if (!Number.isFinite(instant[key]) || instant[key] < 0 || instant[key] > 100) {
+      throw new Error('Instant payout amounts must be numbers between 0 and 100.');
+    }
+  }
   return {
     baseScore: s.baseScore,
     multiplier: s.multiplier,
     minTai: s.minTai,
     taiCap: s.taiCap,
     payoutMode: s.payoutMode,
+    drawRotates: Boolean(s.drawRotates),
+    instantPayouts: Object.fromEntries(Object.keys(DEFAULT_INSTANT_PAYOUTS).map((k) => [k, instant[k]])),
   };
 }
 
@@ -86,11 +126,43 @@ export function handPayments(hand, playerIds, settings) {
   return deltas;
 }
 
-/** Running totals across all hands. Returns { totals, history } */
+/**
+ * Instant payout (kong, animal pair, bonus set): every other player pays the receiver
+ * `amount × baseScore`. An exposed kong made from a discard is paid in full by the discarder.
+ */
+export function instantPayments(entry, playerIds, settings) {
+  const key = INSTANT_KINDS[entry.kind];
+  if (!key) throw new Error('Unknown payout type.');
+  const { winnerId, discarderId } = entry;
+  if (!playerIds.includes(winnerId)) throw new Error('Choose who gets paid.');
+  if (discarderId != null) {
+    if (entry.kind !== 'kong_exposed') throw new Error('Only an exposed kong can be paid by one player.');
+    if (discarderId === winnerId || !playerIds.includes(discarderId)) throw new Error('Discarder must be another player at this table.');
+  }
+  const instant = { ...DEFAULT_INSTANT_PAYOUTS, ...(settings.instantPayouts || {}) };
+  const each = round2(instant[key] * settings.baseScore);
+  const others = playerIds.filter((id) => id !== winnerId);
+  const deltas = Object.fromEntries(playerIds.map((id) => [id, 0]));
+  if (discarderId != null) deltas[discarderId] = -each * others.length;
+  else for (const id of others) deltas[id] = -each;
+  deltas[winnerId] = each * others.length;
+  for (const id of playerIds) deltas[id] = round2(deltas[id]) || 0;
+  return deltas;
+}
+
+/** Payments for any entry kind. Throws on invalid input. */
+export function entryPayments(entry, playerIds, settings) {
+  const kind = entry.kind ?? 'win';
+  if (kind === 'win') return handPayments(entry, playerIds, settings);
+  if (kind === 'draw') return Object.fromEntries(playerIds.map((id) => [id, 0]));
+  return instantPayments({ ...entry, kind }, playerIds, settings);
+}
+
+/** Running totals across all entries. Returns { totals, history } */
 export function computeTotals(hands, playerIds, settings) {
   const totals = Object.fromEntries(playerIds.map((id) => [id, 0]));
   const history = hands.map((hand) => {
-    const deltas = handPayments(hand, playerIds, settings);
+    const deltas = entryPayments(hand, playerIds, settings);
     for (const id of playerIds) totals[id] = round2(totals[id] + deltas[id]);
     return { ...hand, deltas };
   });

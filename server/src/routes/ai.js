@@ -55,10 +55,13 @@ export function aiRouter(db) {
       settings: state.settings,
       totals: Object.fromEntries(Object.entries(state.totals).map(([pid, v]) => [name[pid], v])),
       hands: state.hands.map((h, i) => ({
-        hand: i + 1,
-        winner: name[h.winnerId],
-        discarder: h.discarderId ? name[h.discarderId] : 'self-drawn',
-        tai: h.tai,
+        entry: i + 1,
+        type: h.kind, // win, draw, kong_concealed, kong_exposed, animal_pair, bonus_set
+        roundWind: h.roundWind,
+        dealer: name[h.dealerId],
+        winner: h.winnerId ? name[h.winnerId] : undefined, // for payouts: the player who was paid
+        discarder: h.kind === 'win' ? (h.discarderId ? name[h.discarderId] : 'self-drawn') : h.discarderId ? name[h.discarderId] : undefined,
+        tai: h.tai ?? undefined,
         note: h.note || undefined,
       })),
     };

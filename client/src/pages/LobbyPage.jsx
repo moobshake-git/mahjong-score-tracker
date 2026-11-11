@@ -40,6 +40,8 @@ export default function LobbyPage() {
   if (!lobby) return error ? <ErrorText error={error} /> : <p className="center muted">Loading…</p>;
 
   const isHost = lobby.hostId === user.id;
+  const lastEntry = lobby.hands.at(-1);
+  const canUndo = Boolean(lastEntry) && (isHost || lastEntry.recordedBy === user.id);
   const nameOf = (pid) => lobby.members.find((m) => m.id === pid)?.username ?? '?';
 
   async function onLeave() {
@@ -70,7 +72,7 @@ export default function LobbyPage() {
 
       {lobby.status === 'waiting' &&
         (isHost ? (
-          <GameSetupForm playerCount={lobby.members.length} onStart={act((settings) => api.startGame(lobby.id, settings))} />
+          <GameSetupForm members={lobby.members} onStart={act((settings) => api.startGame(lobby.id, settings))} />
         ) : (
           <section className="card"><p className="muted">Waiting for the host to set the base score and start the game…</p></section>
         ))}
@@ -85,17 +87,20 @@ export default function LobbyPage() {
         <HandHistory lobby={lobby} nameOf={nameOf} />
       )}
 
-      {lobby.status === 'playing' && isHost && (
+      {lobby.status === 'playing' && (isHost || canUndo) && (
         <section className="card row wrap">
-          <button className="btn-secondary" onClick={act(() => api.undoHand(lobby.id))} disabled={lobby.hands.length === 0}>
-            Undo last hand
+          {/* The host can always undo; anyone can undo an entry they recorded themselves (fixing a mis-tap). */}
+          <button className="btn-secondary" onClick={act(() => api.undoHand(lobby.id))} disabled={!canUndo}>
+            Undo last entry
           </button>
-          <button
-            className="btn-danger"
-            onClick={() => window.confirm('End the game? No more hands can be recorded.') && act(() => api.finishGame(lobby.id))()}
-          >
-            Finish game
-          </button>
+          {isHost && (
+            <button
+              className="btn-danger"
+              onClick={() => window.confirm('End the game? No more hands can be recorded.') && act(() => api.finishGame(lobby.id))()}
+            >
+              Finish game
+            </button>
+          )}
         </section>
       )}
 

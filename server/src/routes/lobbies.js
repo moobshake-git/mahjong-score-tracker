@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { requireAuth } from '../auth.js';
-import { validateSettings, handPayments } from '../scoring.js';
+import { validateSettings, entryPayments, ENTRY_KINDS } from '../scoring.js';
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -108,8 +108,12 @@ export function lobbiesRouter(db) {
     const lobby = getLobbyRow(db, id);
     requireHost(lobby, req.user.id);
     if (lobby.status !== 'waiting') throw new HttpError(409, 'The game has already started.');
-    const count = getMembers(db, id).length;
-    if (count < MIN_PLAYERS) throw new HttpError(409, `Need at least ${MIN_PLAYERS} players to start.`);
+    const members = getMembers(db, id);
+    if (members.length < MIN_PLAYERS) throw new HttpError(409, `Need at least ${MIN_PLAYERS} players to start.`);
+    // First dealer (East). Defaults to the first player in seating order.
+    const firstDealerRaw = req.body?.settings?.firstDealerId;
+    const firstDealerId = firstDealerRaw == null || firstDealerRaw === '' ? members[0].id : Number(firstDealerRaw);
+    if (!members.some((m) => m.id === firstDealerId)) throw new HttpError(400, 'First dealer must be a player in this lobby.');
 
     let s;
     try {
@@ -119,47 +123,59 @@ export function lobbiesRouter(db) {
     }
     db.prepare(
       `UPDATE lobbies SET status = 'playing', base_score = ?, multiplier = ?, min_tai = ?, tai_cap = ?, payout_mode = ?,
-       started_at = datetime('now') WHERE id = ?`,
-    ).run(s.baseScore, s.multiplier, s.minTai, s.taiCap, s.payoutMode, id);
+       draw_rotates = ?, instant_payouts = ?, first_dealer_id = ?, started_at = datetime('now') WHERE id = ?`,
+    ).run(
+      s.baseScore,
+      s.multiplier,
+      s.minTai,
+      s.taiCap,
+      s.payoutMode,
+      s.drawRotates ? 1 : 0,
+      JSON.stringify(s.instantPayouts),
+      firstDealerId,
+      id,
+    );
     res.json({ lobby: loadLobbyState(db, id) });
   });
 
-  // Record a winning hand. discarderId = null means self-drawn.
+  // Record an entry: a win, a drawn hand, or an instant payout (kong, animal pair, bonus set).
+  // kind defaults to 'win'. For wins, discarderId = null means self-drawn.
   router.post('/:id/hands', (req, res) => {
     const id = lobbyId(req);
     const lobby = getLobbyRow(db, id);
     requireMember(db, id, req.user.id);
     if (lobby.status !== 'playing') throw new HttpError(409, 'The game is not in progress.');
 
-    const winnerId = Number(req.body?.winnerId);
-    const discarderId = req.body?.discarderId == null || req.body.discarderId === '' ? null : Number(req.body.discarderId);
-    const tai = Number(req.body?.tai);
+    const kind = req.body?.kind ?? 'win';
+    if (!ENTRY_KINDS.includes(kind)) throw new HttpError(400, 'Unknown entry type.');
+    const optionalId = (v) => (v == null || v === '' ? null : Number(v));
+    const winnerId = kind === 'draw' ? null : optionalId(req.body?.winnerId);
+    const discarderId = kind === 'draw' ? null : optionalId(req.body?.discarderId);
+    const tai = kind === 'win' ? Number(req.body?.tai) : null;
     const note = req.body?.note ? String(req.body.note).slice(0, 200) : null;
     const playerIds = getMembers(db, id).map((m) => m.id);
     try {
-      handPayments({ winnerId, discarderId, tai }, playerIds, settingsOf(lobby)); // validates
+      entryPayments({ kind, winnerId, discarderId, tai }, playerIds, settingsOf(lobby)); // validates
     } catch (err) {
       throw new HttpError(400, err.message);
     }
-    db.prepare('INSERT INTO hands (lobby_id, winner_id, discarder_id, tai, note, recorded_by) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id,
-      winnerId,
-      discarderId,
-      tai,
-      note,
-      req.user.id,
-    );
+    db.prepare(
+      'INSERT INTO hands (lobby_id, kind, winner_id, discarder_id, tai, note, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(id, kind, winnerId, discarderId, tai, note, req.user.id);
     res.status(201).json({ lobby: loadLobbyState(db, id) });
   });
 
-  // Undo the most recent hand (host only).
+  // Undo the most recent entry. Allowed for the host, or for whoever recorded it (to fix a mis-tap).
   router.delete('/:id/hands/last', (req, res) => {
     const id = lobbyId(req);
     const lobby = getLobbyRow(db, id);
-    requireHost(lobby, req.user.id);
+    requireMember(db, id, req.user.id);
     if (lobby.status !== 'playing') throw new HttpError(409, 'The game is not in progress.');
-    const last = db.prepare('SELECT id FROM hands WHERE lobby_id = ? ORDER BY id DESC LIMIT 1').get(id);
+    const last = db.prepare('SELECT id, recorded_by FROM hands WHERE lobby_id = ? ORDER BY id DESC LIMIT 1').get(id);
     if (!last) throw new HttpError(404, 'No hands to undo.');
+    if (lobby.host_id !== req.user.id && last.recorded_by !== req.user.id) {
+      throw new HttpError(403, 'Only the host or the person who recorded it can undo this.');
+    }
     db.prepare('DELETE FROM hands WHERE id = ?').run(last.id);
     res.json({ lobby: loadLobbyState(db, id) });
   });
