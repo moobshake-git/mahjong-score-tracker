@@ -1,5 +1,7 @@
 // Database helpers for lobbies, shared by the lobby and AI routes.
-import { computeTotals, DEFAULT_INSTANT_PAYOUTS } from './scoring.js';
+import { computeTotals } from './scoring.js';
+
+import { DEFAULT_INSTANT_PAYOUTS } from './scoring.js';
 import { computeTableState } from './table.js';
 
 export const MAX_PLAYERS = 4;

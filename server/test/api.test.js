@@ -66,6 +66,12 @@ test('full game flow: register, password lobby, start, record hands', async () =
   assert.equal(undone.body.lobby.hands.length, 0);
 });
 
+test('requests without login are rejected', async () => {
+  const anon = client();
+  assert.equal((await anon('GET', '/lobbies')).status, 401);
+  assert.equal((await anon('POST', '/auth/login', { username: 'nobody', password: 'x' })).status, 401);
+});
+
 test('winds, instant payouts, draws and undo by the recorder', async () => {
   const host = client();
   const p2 = client();
@@ -150,10 +156,4 @@ test('migration keeps hands recorded before entry kinds existed', async () => {
   assert.equal(state.settings.drawRotates, false);
   assert.equal(state.table.dealerId, 1, 'old lobbies default to the first player as dealer, who won and kept the deal');
   db.close();
-});
-
-test('requests without login are rejected', async () => {
-  const anon = client();
-  assert.equal((await anon('GET', '/lobbies')).status, 401);
-  assert.equal((await anon('POST', '/auth/login', { username: 'nobody', password: 'x' })).status, 401);
 });
