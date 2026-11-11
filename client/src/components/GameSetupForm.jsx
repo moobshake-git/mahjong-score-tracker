@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import SeatArranger from './SeatArranger.jsx';
 
 const DEFAULTS = {
   baseScore: '0.10',
@@ -6,7 +7,6 @@ const DEFAULTS = {
   minTai: '1',
   taiCap: '5',
   payoutMode: 'standard',
-  firstDealerId: '',
   drawRotates: false,
   kongConcealed: '2',
   kongExposed: '1',
@@ -23,7 +23,13 @@ const INSTANT_FIELDS = [
 
 // Host enters base score and multiplier (and a few house rules) before the game starts.
 export default function GameSetupForm({ members, onStart }) {
-  const [form, setForm] = useState({ ...DEFAULTS, firstDealerId: String(members[0]?.id ?? '') });
+  const [form, setForm] = useState(DEFAULTS);
+  // Seating, first dealer and starting round wind. If players join or leave while the host is
+  // setting up, the seating resets to join order.
+  const ids = members.map((m) => m.id);
+  const [seats, setSeats] = useState({ seatOrder: ids, dealerId: ids[0], roundWind: 0 });
+  const seatsValid = seats.seatOrder.length === ids.length && ids.every((id) => seats.seatOrder.includes(id));
+  const seating = seatsValid ? seats : { seatOrder: ids, dealerId: ids[0], roundWind: seats.roundWind };
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const playerCount = members.length;
 
@@ -47,7 +53,9 @@ export default function GameSetupForm({ members, onStart }) {
       minTai: Number(form.minTai),
       taiCap: Number(form.taiCap),
       payoutMode: form.payoutMode,
-      firstDealerId: Number(form.firstDealerId),
+      seatOrder: seating.seatOrder,
+      firstDealerId: seating.dealerId,
+      startRound: seating.roundWind,
       drawRotates: form.drawRotates,
       instantPayouts: Object.fromEntries(INSTANT_FIELDS.map(([k]) => [k, Number(form[k])])),
     }).catch(() => {});
@@ -70,15 +78,10 @@ export default function GameSetupForm({ members, onStart }) {
             <option value="shooter">Shooter pays all</option>
           </select>
         </label>
-        <label>
-          First dealer (East)
-          <select value={form.firstDealerId} onChange={set('firstDealerId')}>
-            {members.map((m) => <option key={m.id} value={m.id}>{m.username}</option>)}
-          </select>
-          <span className="muted small">
-            Seats follow the player list: {members.map((m) => m.username).join(' → ')}. The deal passes in that order.
-          </span>
-        </label>
+        <div className="field">
+          <span>Seats and first dealer</span>
+          <SeatArranger value={seating} onChange={setSeats} members={members} />
+        </div>
         <label className="check">
           <input type="checkbox" checked={form.drawRotates} onChange={set('drawRotates')} />
           <span>Pass the deal on after a drawn hand (otherwise the dealer stays)</span>

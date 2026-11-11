@@ -10,6 +10,8 @@ import HandHistory from '../components/HandHistory.jsx';
 import AiSummary from '../components/AiSummary.jsx';
 import InviteCard from '../components/InviteCard.jsx';
 import SettleUp from '../components/SettleUp.jsx';
+import ScoreChart from '../components/ScoreChart.jsx';
+import TableFixCard from '../components/TableFixCard.jsx';
 import usePolling from '../usePolling.js';
 
 export default function LobbyPage() {
@@ -89,8 +91,18 @@ export default function LobbyPage() {
         <RecordHandForm lobby={lobby} onRecord={act((hand) => api.recordHand(lobby.id, hand))} />
       )}
 
+      {lobby.status !== 'waiting' && <ScoreChart lobby={lobby} nameOf={nameOf} />}
+
       {lobby.status !== 'waiting' && (
         <HandHistory lobby={lobby} nameOf={nameOf} />
+      )}
+
+      {lobby.status === 'playing' && isHost && lobby.table && (
+        <TableFixCard
+          lobby={lobby}
+          onSave={act((t) => api.fixTable(lobby.id, t))}
+          onUndo={act(() => api.undoTableFix(lobby.id))}
+        />
       )}
 
       {lobby.status === 'playing' && (isHost || canUndo) && (

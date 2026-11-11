@@ -16,11 +16,13 @@ A score tracker for **Singapore-style Mahjong**, so a group can keep running sco
 - **AI helper (LLM via OpenCode Go)**:
   - *Suggest tai*: describe a hand in plain words ("all pongs, red dragon, half colour") and the AI suggests a tai count with a breakdown.
   - *Game recap*: a short write-up of the game so far.
-- **Tap-to-record**: winner, who paid and tai are big tap targets, so a hand takes three taps. Anyone at the table can record, and whoever recorded an entry (or the host) can undo it.
+- **Table view**: a bird's-eye table with each player's seat wind (東南西北), score and the dealer, with your own seat at the bottom. Record a win by tapping the winner's seat, then the shooter's seat (or the middle for self-drawn), then the tai. Arrows show who pays the winner and how much before you save. Anyone at the table can record, and whoever recorded an entry (or the host) can undo it.
 - **Tai calculator**: tick the patterns in the winning hand (dragon pongs, winds, all pongs, half/full colour, flowers, animals, limit hands…) and it adds up the tai, capped at the table's limit. Edit `client/src/lib/taiRules.js` to match your house rules.
-- **Winds and dealer**: the host picks the first dealer. The app tracks the round wind, each player's seat wind and the dealer: the dealer keeps the deal on a win, and on a draw unless the host turns on "pass the deal after a draw". The calculator's seat/round wind lines use these automatically.
+- **Seats and winds**: at game setup the host arranges the table (tap two players to swap seats, pick the first dealer and the starting round wind). Mid-game, the host can fix the seating, dealer or round wind ("Fix seats, dealer or round wind"); hands already recorded keep their winds, and the last fix can be undone. The app tracks the round wind, each player's seat wind and the dealer: the dealer keeps the deal on a win, and on a draw unless the host turns on "pass the deal after a draw". The calculator's seat/round wind lines use these automatically.
 - **Instant payouts**: one tap for a concealed kong, exposed kong (optionally paid in full by the discarder), animal pair or full bonus set. The host sets the amounts at game setup.
 - **Drawn hands**: recorded so dealer rotation stays right; no money moves.
+- **Game progress**: a strip under the scores shows each round's four deals, the current deal, and dots for how many hands were played in each (more than one = the dealer kept the deal).
+- **Score over time**: a line chart of everyone's running total after each entry. Hover or drag across it to see the totals at any point.
 
 ## Tech stack
 
@@ -129,7 +131,7 @@ Example: base 0.10, multiplier 2, 3 tai means 1 unit = 0.40.
 | Animal pair (cat + rat, rooster + centipede) | 1 | |
 | Full set of 4 flowers, 4 seasons or 4 animals | 2 | |
 
-**Dealer and winds** (`server/src/table.js`): seats follow the player list; the dealer is East. A dealer win, or a draw (by default), keeps the deal; anything else passes it to the next player. When the deal has gone all the way round, the round wind moves on (East → South → West → North).
+**Dealer and winds** (`server/src/table.js`): seats follow the order the host set at game setup (join order by default); the dealer is East. A dealer win, or a draw (by default), keeps the deal; anything else passes it to the next player. When the deal has gone all the way round, the round wind moves on (East → South → West → North). A table fix from the host (stored in `table_adjustments` with the number of entries recorded at the time) resets the seating, dealer and round wind from that point on.
 
 ## Project structure
 
@@ -178,9 +180,11 @@ All routes except register and login need a login cookie.
 | POST | `/api/lobbies/:id/join` | `{ password? }` or `{ inviteCode }` |
 | GET | `/api/lobbies/:id/invite` | members only: `{ code }` for the QR / share link `/join/:id/:code` |
 | POST | `/api/lobbies/:id/leave` | not allowed while a game is in progress |
-| POST | `/api/lobbies/:id/start` | host only: `{ settings: { baseScore, multiplier, minTai, taiCap, payoutMode, firstDealerId?, drawRotates?, instantPayouts? } }` |
+| POST | `/api/lobbies/:id/start` | host only: `{ settings: { baseScore, multiplier, minTai, taiCap, payoutMode, seatOrder?, firstDealerId?, startRound?, drawRotates?, instantPayouts? } }`. `seatOrder` = player ids in turn order (default join order); `startRound` 0–3 = East–North |
 | POST | `/api/lobbies/:id/hands` | `{ kind?, winnerId, discarderId, tai, payoutMode?, note? }`. `kind` is `win` (default; `discarderId` null = self-drawn; `payoutMode` `'standard'` or `'shooter'`, default = lobby), `draw`, `kong_concealed`, `kong_exposed`, `animal_pair` or `bonus_set` (`winnerId` = who gets paid) |
 | DELETE | `/api/lobbies/:id/hands/last` | undo the last entry: the host, or whoever recorded it |
+| POST | `/api/lobbies/:id/table` | host only, mid-game: `{ seatOrder, dealerId, roundWind }` fixes the table from the next hand on |
+| DELETE | `/api/lobbies/:id/table/last` | host only: undo the last table fix |
 | POST | `/api/lobbies/:id/finish` | host only |
 | GET | `/api/ai/status` | `{ enabled }` |
 | POST | `/api/ai/tai` | `{ description }` returns `{ tai, breakdown, notes }` |

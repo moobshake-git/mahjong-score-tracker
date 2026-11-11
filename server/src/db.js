@@ -84,6 +84,25 @@ const MIGRATIONS = [
   ALTER TABLE lobbies ADD COLUMN draw_rotates INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE lobbies ADD COLUMN instant_payouts TEXT; -- JSON, see DEFAULT_INSTANT_PAYOUTS in scoring.js
   `,
+
+  // 4: seating chosen at setup, a starting round wind, and mid-game table adjustments
+  // (fix seats / dealer / round wind). See computeTableState in table.js.
+  `
+  ALTER TABLE lobbies ADD COLUMN seat_order TEXT; -- JSON array of user ids in turn order; NULL = join order
+  ALTER TABLE lobbies ADD COLUMN start_round INTEGER NOT NULL DEFAULT 0; -- 0 East, 1 South, 2 West, 3 North
+
+  CREATE TABLE table_adjustments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    lobby_id    INTEGER NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL, -- number of entries recorded when it was made; applies from there on
+    seat_order  TEXT NOT NULL,    -- JSON array of user ids
+    dealer_id   INTEGER NOT NULL REFERENCES users(id),
+    round_wind  INTEGER NOT NULL CHECK (round_wind BETWEEN 0 AND 3),
+    created_by  INTEGER NOT NULL REFERENCES users(id),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_adjustments_lobby ON table_adjustments(lobby_id);
+  `,
 ];
 
 function migrate(db) {
