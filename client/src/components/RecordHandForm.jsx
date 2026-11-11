@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import VoiceInput from './VoiceInput.jsx';
 
 export default function RecordHandForm({ lobby, onRecord }) {
   const [winnerId, setWinnerId] = useState('');
   const [discarderId, setDiscarderId] = useState(''); // '' = self-drawn
   const [tai, setTai] = useState(String(lobby.settings.minTai || 1));
+  // 'standard' = normal payout, 'shooter' = shooter pays. Starts at the lobby default each hand.
+  const [payoutMode, setPayoutMode] = useState(lobby.settings.payoutMode);
   const [note, setNote] = useState('');
 
   // AI tai helper
@@ -16,15 +19,30 @@ export default function RecordHandForm({ lobby, onRecord }) {
   async function onSubmit(e) {
     e.preventDefault();
     try {
-      await onRecord({ winnerId: Number(winnerId), discarderId: discarderId ? Number(discarderId) : null, tai: Number(tai), note });
+      await onRecord({
+        winnerId: Number(winnerId),
+        discarderId: discarderId ? Number(discarderId) : null,
+        tai: Number(tai),
+        payoutMode: discarderId ? payoutMode : undefined,
+        note,
+      });
       setWinnerId('');
       setDiscarderId('');
+      setPayoutMode(lobby.settings.payoutMode);
       setNote('');
       setDescription('');
       setAiResult(null);
     } catch {
       /* error shown by parent */
     }
+  }
+
+  // Fill the form from what the player said (see VoiceInput).
+  function onParsed(hand) {
+    if (hand.winnerId) setWinnerId(String(hand.winnerId));
+    setDiscarderId(hand.discarderId && hand.discarderId !== hand.winnerId ? String(hand.discarderId) : '');
+    if (hand.tai != null) setTai(String(hand.tai));
+    setPayoutMode(hand.payoutMode || lobby.settings.payoutMode);
   }
 
   async function askAi() {
@@ -46,10 +64,18 @@ export default function RecordHandForm({ lobby, onRecord }) {
     <section className="card">
       <h2>Record a hand</h2>
       <form onSubmit={onSubmit} className="stack">
+        <VoiceInput lobbyId={lobby.id} onParsed={onParsed} />
         <div className="grid2">
           <label>
             Winner
-            <select value={winnerId} onChange={(e) => setWinnerId(e.target.value)} required>
+            <select
+              value={winnerId}
+              onChange={(e) => {
+                setWinnerId(e.target.value);
+                if (e.target.value === discarderId) setDiscarderId('');
+              }}
+              required
+            >
               <option value="">Choose…</option>
               {lobby.members.map((m) => <option key={m.id} value={m.id}>{m.username}</option>)}
             </select>
@@ -72,6 +98,20 @@ export default function RecordHandForm({ lobby, onRecord }) {
             <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
           </label>
         </div>
+
+        {discarderId && (
+          <fieldset className="payout">
+            <legend>Payout for this hand</legend>
+            <label className="radio">
+              <input type="radio" name="payoutMode" value="standard" checked={payoutMode === 'standard'} onChange={() => setPayoutMode('standard')} />
+              Normal payout – shooter pays 2×, others 1×
+            </label>
+            <label className="radio">
+              <input type="radio" name="payoutMode" value="shooter" checked={payoutMode === 'shooter'} onChange={() => setPayoutMode('shooter')} />
+              Shooter pays all
+            </label>
+          </fieldset>
+        )}
 
         <details className="ai-box">
           <summary>✨ Not sure of the tai? Ask the AI</summary>
