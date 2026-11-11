@@ -138,6 +138,7 @@ export function lobbiesRouter(db) {
   });
 
   // Record a winning hand. discarderId = null means self-drawn.
+  // Body: { winnerId, discarderId, tai, payoutMode?, note? }
   router.post('/:id/hands', (req, res) => {
     const id = lobbyId(req);
     const lobby = getLobbyRow(db, id);
@@ -147,21 +148,19 @@ export function lobbiesRouter(db) {
     const winnerId = Number(req.body?.winnerId);
     const discarderId = req.body?.discarderId == null || req.body.discarderId === '' ? null : Number(req.body.discarderId);
     const tai = Number(req.body?.tai);
+    // 'standard' (normal payout) or 'shooter' (shooter pays). Omit to use the lobby default.
+    // Self-drawn hands have no shooter, so the mode is not stored for them.
+    const payoutMode = discarderId == null ? null : req.body?.payoutMode || settingsOf(lobby).payoutMode;
     const note = req.body?.note ? String(req.body.note).slice(0, 200) : null;
     const playerIds = getMembers(db, id).map((m) => m.id);
     try {
-      handPayments({ winnerId, discarderId, tai }, playerIds, settingsOf(lobby)); // validates
+      handPayments({ winnerId, discarderId, tai, payoutMode }, playerIds, settingsOf(lobby)); // validates
     } catch (err) {
       throw new HttpError(400, err.message);
     }
-    db.prepare('INSERT INTO hands (lobby_id, winner_id, discarder_id, tai, note, recorded_by) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id,
-      winnerId,
-      discarderId,
-      tai,
-      note,
-      req.user.id,
-    );
+    db.prepare(
+      'INSERT INTO hands (lobby_id, winner_id, discarder_id, tai, payout_mode, note, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(id, winnerId, discarderId, tai, payoutMode, note, req.user.id);
     res.status(201).json({ lobby: loadLobbyState(db, id) });
   });
 

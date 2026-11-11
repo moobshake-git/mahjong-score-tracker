@@ -5,13 +5,16 @@
 //   multiplier - how much the payout grows per extra tai, e.g. 2 (doubles each tai)
 //   minTai     - smallest tai allowed to win (commonly 1)
 //   taiCap     - tai above this count as the cap (commonly 5)
-//   payoutMode - 'standard': discarder pays 2 units, every other player pays 1 unit
-//                'shooter' : discarder pays for everyone (2 + 1 per other player)
+//   payoutMode - default for discard wins (each hand can override it):
+//                'standard': "normal payout" - discarder pays 2 units, every other player pays 1 unit
+//                'shooter' : "shooter pays" - discarder pays for everyone (2 + 1 per other player)
 //   Self-drawn (zimo) wins: every other player pays 2 units, in both modes.
 //
 // "unit" = baseScore * multiplier ^ (min(tai, taiCap) - 1)
 //
 // TODO (open decisions in README): bonus tiles / animals instant payouts, kong payouts.
+
+export const PAYOUT_MODES = Object.freeze(['standard', 'shooter']);
 
 export const DEFAULT_SETTINGS = Object.freeze({
   baseScore: 0.1,
@@ -34,7 +37,7 @@ export function validateSettings(input = {}) {
   if (!Number.isFinite(s.multiplier) || s.multiplier < 1) throw new Error('Multiplier must be a number of at least 1.');
   if (!Number.isInteger(s.minTai) || s.minTai < 0) throw new Error('Minimum tai must be a whole number (0 or more).');
   if (!Number.isInteger(s.taiCap) || s.taiCap < Math.max(1, s.minTai)) throw new Error('Tai cap must be a whole number no smaller than the minimum tai.');
-  if (!['standard', 'shooter'].includes(s.payoutMode)) throw new Error("Payout mode must be 'standard' or 'shooter'.");
+  if (!PAYOUT_MODES.includes(s.payoutMode)) throw new Error("Payout mode must be 'standard' or 'shooter'.");
   return {
     baseScore: s.baseScore,
     multiplier: s.multiplier,
@@ -54,13 +57,16 @@ export function unitValue(tai, settings) {
 
 /**
  * Work out who pays whom for one winning hand.
- * @param {{winnerId:number, discarderId:number|null, tai:number}} hand
+ * @param {{winnerId:number, discarderId:number|null, tai:number, payoutMode?:string|null}} hand
+ *        payoutMode overrides settings.payoutMode for this hand (only matters for discard wins)
  * @param {number[]} playerIds all players at the table (including the winner)
  * @param {object} settings validated settings
  * @returns {Record<number, number>} change in score per player id (sums to 0)
  */
 export function handPayments(hand, playerIds, settings) {
   const { winnerId, discarderId, tai } = hand;
+  const payoutMode = hand.payoutMode ?? settings.payoutMode;
+  if (!PAYOUT_MODES.includes(payoutMode)) throw new Error("Payout mode must be 'standard' or 'shooter'.");
   if (!playerIds.includes(winnerId)) throw new Error('Winner is not at this table.');
   if (discarderId != null && (discarderId === winnerId || !playerIds.includes(discarderId))) {
     throw new Error('Discarder must be another player at this table.');
@@ -74,7 +80,7 @@ export function handPayments(hand, playerIds, settings) {
   if (discarderId == null) {
     // Self-drawn: everyone pays double.
     for (const id of others) deltas[id] -= 2 * unit;
-  } else if (settings.payoutMode === 'shooter') {
+  } else if (payoutMode === 'shooter') {
     // Discarder pays for the whole table.
     deltas[discarderId] -= 2 * unit + (others.length - 1) * unit;
   } else {

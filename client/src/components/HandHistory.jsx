@@ -8,6 +8,7 @@ export default function HandHistory({ lobby, nameOf }) {
           <li key={h.id}>
             <strong>{nameOf(h.winnerId)}</strong> won {h.tai} tai{' '}
             {h.discarderId ? <>off <strong>{nameOf(h.discarderId)}</strong></> : '(self-drawn)'}
+            {h.discarderId && (h.payoutMode ?? lobby.settings.payoutMode) === 'shooter' && <span className="tag">shooter pays</span>}
             {h.note && <span className="muted"> – {h.note}</span>}
           </li>
         ))}

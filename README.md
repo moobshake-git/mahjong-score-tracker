@@ -11,6 +11,8 @@ A score tracker for **Singapore-style Mahjong**, so a group can keep running sco
 - **Game setup**: before the game starts, the host enters the **base score**, the **multiplier** per tai, the min tai, the tai cap and the discard payout rule. A preview table shows what each tai is worth.
 - **Score tracking**: record each hand's winner, tai, and who paid (discard or self-drawn). Everyone sees running totals, which refresh every few seconds. The host can undo the last hand or finish the game.
 - **Settle up**: turns the totals into the fewest "X pays Y" transfers. It is shown during the game ("if you stopped now") and as the final bill.
+- **Normal payout or shooter pays, per hand**: the lobby has a default, and each discard win can switch between the two.
+- **Voice input**: tap 🎤 and say the hand, e.g. *"Alice won 3 tai from Bob"*, *"Bob zimo 2 tai"* or *"Carol 4 tai, Dave shoot, shooter pay"*. The form fills in for you to check before saving. You can also type the sentence instead.
 - **AI helper (LLM via OpenCode Go)**:
   - *Suggest tai*: describe a hand in plain words ("all pongs, red dragon, half colour") and the AI suggests a tai count with a breakdown.
   - *Game recap*: a short write-up of the game so far.
@@ -64,7 +66,7 @@ npm run dev:lan
 
 | Command | What it does |
 |---|---|
-| `npm test` | Runs the server tests (scoring rules, API flow, AI route with a fake LLM) and the client tests (`client/src/**/*.test.js`, plain logic only) |
+| `npm test` | Runs the server tests (scoring rules, the voice parser, API flow, AI routes with a fake LLM) and the client tests (`client/src/**/*.test.js`, plain logic only) |
 | `npm run build` | Builds the React app into `client/dist` |
 | `npm start` | Runs Express only. If `client/dist` exists, it serves the built app too, so this is the production mode |
 
@@ -84,14 +86,32 @@ curl -H "Authorization: Bearer $OPENCODE_API_KEY" "$OPENCODE_BASE_URL/models"
 
 Every LLM call goes through `chat()` / `chatJson()` in `server/src/llm.js`. To add a new AI feature, add a route in `server/src/routes/ai.js` and a function in `client/src/api.js`.
 
+## Voice input (speech to text)
+
+1. The browser's built-in speech recognition turns speech into text (`client/src/useSpeechRecognition.js`, language `en-SG`). It works in Chrome, Edge and Safari but not Firefox; there, players type the sentence. Chrome sends the audio to Google to transcribe it. The browser asks for microphone permission, which only works on `localhost` or HTTPS.
+2. The text goes to `POST /api/ai/lobbies/:id/parse-hand`. If an OpenCode Go key is set, the LLM picks out winner, discarder, tai and payout. Otherwise, or if the LLM call fails, a rule-based parser does it (`server/src/handParser.js`).
+3. The parser handles common mishearings: "tie"/"thai" for tai, number words, and slightly misspelt names. Names are matched against the players in the lobby.
+4. Nothing is saved automatically. The form is filled in and the player presses **Save hand**.
+
+Phrases it understands:
+
+| Meaning | Say |
+|---|---|
+| Winner | "Alice won…", "Alice hu…", or the first name said |
+| Discarder | "…from Bob", "…off Bob", "Bob shoot", "Bob discard", or the second name said |
+| Self-drawn | "zimo", "self drawn", "self draw" |
+| Shooter pays | "shooter pay", "shooter pays", "pay all" |
+| Normal payout | "normal", "normal payout" (otherwise the lobby default applies) |
+
 ## Scoring rules (current implementation)
 
 These are in `server/src/scoring.js` and covered by `server/test/scoring.test.js`.
 
 - **One unit** = `base score × multiplier ^ (tai − 1)`. Tai above the cap count as the cap.
 - **Self-drawn**: every other player pays **2 units**.
-- **Discard, "standard"**: the discarder pays **2 units** and every other player pays **1 unit**.
-- **Discard, "shooter"**: the discarder pays for the whole table (2 units + 1 unit per other player).
+- **Discard, normal payout** (`standard`): the discarder pays **2 units** and every other player pays **1 unit**.
+- **Discard, shooter pays** (`shooter`): the discarder pays for the whole table (2 units + 1 unit per other player).
+- The lobby sets the default. Each hand can override it (stored in `hands.payout_mode`; `NULL` = lobby default).
 
 Example: base 0.10, multiplier 2, 3 tai means 1 unit = 0.40.
 
@@ -110,19 +130,20 @@ Example: base 0.10, multiplier 2, 3 tai means 1 unit = 0.40.
 │   │   ├── auth.js         # JWT cookie + requireAuth middleware
 │   │   ├── scoring.js      # Singapore payout rules (pure functions)
 │   │   ├── lobbyService.js # shared DB helpers for lobbies
+│   │   ├── handParser.js   # rule-based "Alice won 3 tai from Bob" parser
 │   │   ├── llm.js          # OpenCode Go client
 │   │   └── routes/
 │   │       ├── auth.js     # /api/auth/*    register, login, logout, me
 │   │       ├── lobbies.js  # /api/lobbies/* list, create, join, leave, start, hands, undo, finish
-│   │       └── ai.js       # /api/ai/*      tai suggestion, game recap
+│   │       └── ai.js       # /api/ai/*      tai suggestion, voice parsing, game recap
 │   └── test/               # node --test
 └── client/
     ├── index.html
     ├── vite.config.js      # dev proxy /api -> :3001
     └── src/
-        ├── main.jsx, App.jsx, api.js, AuthContext.jsx, usePolling.js, styles.css
+        ├── main.jsx, App.jsx, api.js, AuthContext.jsx, usePolling.js, useSpeechRecognition.js, styles.css
         ├── pages/          # LoginPage, LobbiesPage, LobbyPage
-        └── components/     # GameSetupForm, RecordHandForm, Scoreboard, HandHistory, AiSummary, ...
+        └── components/     # GameSetupForm, RecordHandForm, VoiceInput, Scoreboard, HandHistory, AiSummary, ...
 ```
 
 ## API overview
@@ -142,11 +163,12 @@ All routes except register and login need a login cookie.
 | GET | `/api/lobbies/:id/invite` | members only: `{ code }` for the QR / share link `/join/:id/:code` |
 | POST | `/api/lobbies/:id/leave` | not allowed while a game is in progress |
 | POST | `/api/lobbies/:id/start` | host only: `{ settings: { baseScore, multiplier, minTai, taiCap, payoutMode } }` |
-| POST | `/api/lobbies/:id/hands` | `{ winnerId, discarderId (null = self-drawn), tai, note? }` |
+| POST | `/api/lobbies/:id/hands` | `{ winnerId, discarderId (null = self-drawn), tai, payoutMode? ('standard' or 'shooter'; default = lobby), note? }` |
 | DELETE | `/api/lobbies/:id/hands/last` | host only: undo |
 | POST | `/api/lobbies/:id/finish` | host only |
 | GET | `/api/ai/status` | `{ enabled }` |
 | POST | `/api/ai/tai` | `{ description }` returns `{ tai, breakdown, notes }` |
+| POST | `/api/ai/lobbies/:id/parse-hand` | `{ transcript }` returns `{ hand: { winnerId, discarderId, tai, payoutMode, missing }, source: 'ai' or 'rules' }`. Works without an AI key |
 | POST | `/api/ai/lobbies/:id/summary` | returns `{ summary }` |
 
 ## Working together

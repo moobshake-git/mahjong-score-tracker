@@ -41,10 +41,10 @@ export default function GameSetupForm({ playerCount, onStart }) {
           <label>Tai cap<input type="number" min="1" value={form.taiCap} onChange={set('taiCap')} required /></label>
         </div>
         <label>
-          Discard payout
+          Default discard payout (can be changed for each hand)
           <select value={form.payoutMode} onChange={set('payoutMode')}>
-            <option value="standard">Standard – discarder pays 2×, others 1×</option>
-            <option value="shooter">Shooter – discarder pays for everyone</option>
+            <option value="standard">Normal payout – shooter pays 2×, others 1×</option>
+            <option value="shooter">Shooter pays all</option>
           </select>
         </label>
         {preview.length > 0 && (

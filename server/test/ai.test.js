@@ -50,3 +50,50 @@ test('POST /ai/tai returns the parsed suggestion from the model', async () => {
   assert.equal(sentBody.model, config.llm.model);
   assert.equal(sentBody.messages.at(-1).content, 'all pongs with red dragon');
 });
+
+test('POST /ai/lobbies/:id/parse-hand maps the model reply to player ids', async () => {
+  globalThis.fetch = realFetch;
+  const login = async (username) => {
+    const r = await realFetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: 'secret1' }),
+    });
+    const cookie = r.headers.get('set-cookie').split(';')[0];
+    return (method, path, body) =>
+      realFetch(baseUrl + path, { method, headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) }).then(
+        async (res) => ({ status: res.status, body: await res.json() }),
+      );
+  };
+  const dan = await login('dan');
+  const eve = await login('eve');
+  const { body } = await dan('POST', '/lobbies', { name: 'voice table' });
+  await eve('POST', `/lobbies/${body.lobby.id}/join`, {});
+  const [danId, eveId] = (await dan('GET', `/lobbies/${body.lobby.id}`)).body.lobby.members.map((m) => m.id);
+
+  // Model answers with slightly wrong capitalisation; we should still map to the right players.
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).startsWith(config.llm.baseUrl)) return realFetch(url, init);
+    const content = '{"winner": "Eve", "discarder": "DAN", "tai": 4, "payoutMode": "shooter"}';
+    return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+  };
+  const ok = await dan('POST', `/ai/lobbies/${body.lobby.id}/parse-hand`, { transcript: 'eve four tie dan shoot shooter pay' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.source, 'ai');
+  assert.deepEqual(
+    { w: ok.body.hand.winnerId, d: ok.body.hand.discarderId, t: ok.body.hand.tai, p: ok.body.hand.payoutMode },
+    { w: eveId, d: danId, t: 4, p: 'shooter' },
+  );
+
+  // If the AI service errors, the rule-based parser takes over.
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).startsWith(config.llm.baseUrl)) return realFetch(url, init);
+    return new Response('boom', { status: 500 });
+  };
+  const fallback = await dan('POST', `/ai/lobbies/${body.lobby.id}/parse-hand`, { transcript: 'Dan won 2 tai from Eve' });
+  assert.equal(fallback.body.source, 'rules');
+  assert.equal(fallback.body.hand.winnerId, danId);
+  assert.equal(fallback.body.hand.discarderId, eveId);
+  assert.equal(fallback.body.hand.tai, 2);
+  globalThis.fetch = realFetch;
+});
