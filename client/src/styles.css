@@ -46,6 +46,27 @@ h2 { font-size: 1.1rem; }
 .muted { color: var(--muted); }
 .small { font-size: 0.875rem; }
 .error { color: var(--danger); margin: 0; }
+.tiny { font-size: 0.75rem; }
+.grow { flex: 1; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  background: transparent; color: var(--text); border-color: var(--border);
+  padding: 8px 12px; min-height: 40px; border-radius: 999px;
+}
+.chip.on { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+.tabs { display: flex; gap: 4px; background: var(--bg); padding: 3px; border-radius: 10px; margin-bottom: 12px; }
+.tab { background: transparent; color: var(--muted); padding: 6px 10px; font-size: 0.9rem; }
+.tab.on { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+label.check, .check { flex-direction: row; align-items: center; gap: 8px; display: flex; }
+.check > span:first-of-type { flex: 1; }
+.tai-calc { gap: 8px; }
+.tai-calc .chip { min-height: 32px; padding: 4px 10px; }
+.wind {
+  display: inline-block; width: 1.5em; text-align: center; margin-right: 8px; border-radius: 4px;
+  border: 1px solid var(--border); font-size: 0.75rem; font-weight: 600; color: var(--muted);
+}
+.wind.dealer { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
 
 label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
 input, select, textarea {

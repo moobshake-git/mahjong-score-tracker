@@ -1,11 +1,31 @@
 import { useState } from 'react';
 
-const DEFAULTS = { baseScore: '0.10', multiplier: '2', minTai: '1', taiCap: '5', payoutMode: 'standard' };
+const DEFAULTS = {
+  baseScore: '0.10',
+  multiplier: '2',
+  minTai: '1',
+  taiCap: '5',
+  payoutMode: 'standard',
+  firstDealerId: '',
+  drawRotates: false,
+  kongConcealed: '2',
+  kongExposed: '1',
+  animalPair: '1',
+  bonusSet: '2',
+};
+
+const INSTANT_FIELDS = [
+  ['kongConcealed', 'Concealed kong'],
+  ['kongExposed', 'Exposed kong'],
+  ['animalPair', 'Animal pair (cat+rat, rooster+centipede)'],
+  ['bonusSet', 'Full set of 4 flowers / seasons / animals'],
+];
 
 // Host enters base score and multiplier (and a few house rules) before the game starts.
-export default function GameSetupForm({ playerCount, onStart }) {
-  const [form, setForm] = useState(DEFAULTS);
-  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+export default function GameSetupForm({ members, onStart }) {
+  const [form, setForm] = useState({ ...DEFAULTS, firstDealerId: String(members[0]?.id ?? '') });
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  const playerCount = members.length;
 
   const base = Number(form.baseScore);
   const mult = Number(form.multiplier);
@@ -27,6 +47,9 @@ export default function GameSetupForm({ playerCount, onStart }) {
       minTai: Number(form.minTai),
       taiCap: Number(form.taiCap),
       payoutMode: form.payoutMode,
+      firstDealerId: Number(form.firstDealerId),
+      drawRotates: form.drawRotates,
+      instantPayouts: Object.fromEntries(INSTANT_FIELDS.map(([k]) => [k, Number(form[k])])),
     }).catch(() => {});
   }
 
@@ -47,6 +70,33 @@ export default function GameSetupForm({ playerCount, onStart }) {
             <option value="shooter">Shooter pays all</option>
           </select>
         </label>
+        <label>
+          First dealer (East)
+          <select value={form.firstDealerId} onChange={set('firstDealerId')}>
+            {members.map((m) => <option key={m.id} value={m.id}>{m.username}</option>)}
+          </select>
+          <span className="muted small">
+            Seats follow the player list: {members.map((m) => m.username).join(' → ')}. The deal passes in that order.
+          </span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={form.drawRotates} onChange={set('drawRotates')} />
+          <span>Pass the deal on after a drawn hand (otherwise the dealer stays)</span>
+        </label>
+
+        <details className="ai-box">
+          <summary>Instant payouts (kongs, animals)</summary>
+          <p className="muted small">In base units: each other player pays this × the base score straight away.</p>
+          <div className="grid2">
+            {INSTANT_FIELDS.map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <input type="number" step="0.5" min="0" max="100" value={form[key]} onChange={set(key)} required />
+              </label>
+            ))}
+          </div>
+        </details>
+
         {preview.length > 0 && (
           <table className="table small">
             <thead><tr><th>Tai</th><th>1 unit</th><th>Self-drawn (each pays)</th></tr></thead>

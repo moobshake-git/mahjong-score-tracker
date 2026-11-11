@@ -16,6 +16,11 @@ A score tracker for **Singapore-style Mahjong**, so a group can keep running sco
 - **AI helper (LLM via OpenCode Go)**:
   - *Suggest tai*: describe a hand in plain words ("all pongs, red dragon, half colour") and the AI suggests a tai count with a breakdown.
   - *Game recap*: a short write-up of the game so far.
+- **Tap-to-record**: winner, who paid and tai are big tap targets, so a hand takes three taps. Anyone at the table can record, and whoever recorded an entry (or the host) can undo it.
+- **Tai calculator**: tick the patterns in the winning hand (dragon pongs, winds, all pongs, half/full colour, flowers, animals, limit hands…) and it adds up the tai, capped at the table's limit. Edit `client/src/lib/taiRules.js` to match your house rules.
+- **Winds and dealer**: the host picks the first dealer. The app tracks the round wind, each player's seat wind and the dealer: the dealer keeps the deal on a win, and on a draw unless the host turns on "pass the deal after a draw". The calculator's seat/round wind lines use these automatically.
+- **Instant payouts**: one tap for a concealed kong, exposed kong (optionally paid in full by the discarder), animal pair or full bonus set. The host sets the amounts at game setup.
+- **Drawn hands**: recorded so dealer rotation stays right; no money moves.
 
 ## Tech stack
 
@@ -115,6 +120,17 @@ These are in `server/src/scoring.js` and covered by `server/test/scoring.test.js
 
 Example: base 0.10, multiplier 2, 3 tai means 1 unit = 0.40.
 
+**Instant payouts** are counted in *base units* (multiples of the base score), not tai. Each other player pays straight away:
+
+| Event | Default | Notes |
+|---|---|---|
+| Concealed kong | 2 | |
+| Exposed kong | 1 | If made from a discard, the discarder pays for the whole table |
+| Animal pair (cat + rat, rooster + centipede) | 1 | |
+| Full set of 4 flowers, 4 seasons or 4 animals | 2 | |
+
+**Dealer and winds** (`server/src/table.js`): seats follow the player list; the dealer is East. A dealer win, or a draw (by default), keeps the deal; anything else passes it to the next player. When the deal has gone all the way round, the round wind moves on (East → South → West → North).
+
 ## Project structure
 
 ```
@@ -162,9 +178,9 @@ All routes except register and login need a login cookie.
 | POST | `/api/lobbies/:id/join` | `{ password? }` or `{ inviteCode }` |
 | GET | `/api/lobbies/:id/invite` | members only: `{ code }` for the QR / share link `/join/:id/:code` |
 | POST | `/api/lobbies/:id/leave` | not allowed while a game is in progress |
-| POST | `/api/lobbies/:id/start` | host only: `{ settings: { baseScore, multiplier, minTai, taiCap, payoutMode } }` |
-| POST | `/api/lobbies/:id/hands` | `{ winnerId, discarderId (null = self-drawn), tai, payoutMode? ('standard' or 'shooter'; default = lobby), note? }` |
-| DELETE | `/api/lobbies/:id/hands/last` | host only: undo |
+| POST | `/api/lobbies/:id/start` | host only: `{ settings: { baseScore, multiplier, minTai, taiCap, payoutMode, firstDealerId?, drawRotates?, instantPayouts? } }` |
+| POST | `/api/lobbies/:id/hands` | `{ kind?, winnerId, discarderId, tai, payoutMode?, note? }`. `kind` is `win` (default; `discarderId` null = self-drawn; `payoutMode` `'standard'` or `'shooter'`, default = lobby), `draw`, `kong_concealed`, `kong_exposed`, `animal_pair` or `bonus_set` (`winnerId` = who gets paid) |
+| DELETE | `/api/lobbies/:id/hands/last` | undo the last entry: the host, or whoever recorded it |
 | POST | `/api/lobbies/:id/finish` | host only |
 | GET | `/api/ai/status` | `{ enabled }` |
 | POST | `/api/ai/tai` | `{ description }` returns `{ tai, breakdown, notes }` |
@@ -188,13 +204,12 @@ All routes except register and login need a login cookie.
 ## Ideas / next steps
 
 - Real-time updates with WebSockets or Server-Sent Events, replacing the 3-second polling in `client/src/usePolling.js`
-- Bonus tile and animal instant payouts, and kong payouts
-- Seats and winds, with prevailing wind and dealer rotation
+- Let other players confirm or dispute a recorded hand
 - Game history and stats per player
 - Let the AI read a photo of the winning hand
 - Rate limiting on login and AI routes; deployment (e.g. Render or Fly.io with a persistent disk for SQLite)
 
 ## Open decisions
 
-- Exact Singapore payout rules to support: tai cap, shooter pays, bonus tiles/animals
+- Check the default tai values (`client/src/lib/taiRules.js`) and instant payout amounts against your table's house rules
 - Hosting
