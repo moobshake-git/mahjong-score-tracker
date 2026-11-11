@@ -7,8 +7,10 @@ A score tracker for **Singapore-style Mahjong**, so a group can keep running sco
 - **Login page**: each player signs up and logs in with their own account.
 - **Lobbies**: create a lobby for a table (up to 4 players); other players join it.
 - **Lobby passwords**: a lobby can have a password so only your table can join.
+- **QR invite**: while a lobby is waiting for players, it shows a QR code and a share link. Scanning it joins the lobby without typing the password (after logging in, if needed).
 - **Game setup**: before the game starts, the host enters the **base score**, the **multiplier** per tai, the min tai, the tai cap and the discard payout rule. A preview table shows what each tai is worth.
 - **Score tracking**: record each hand's winner, tai, and who paid (discard or self-drawn). Everyone sees running totals, which refresh every few seconds. The host can undo the last hand or finish the game.
+- **Settle up**: turns the totals into the fewest "X pays Y" transfers. It is shown during the game ("if you stopped now") and as the final bill.
 - **Normal payout or shooter pays, per hand**: the lobby has a default, and each discard win can switch between the two.
 - **Voice input**: tap 🎤 and say the hand, e.g. *"Alice won 3 tai from Bob"*, *"Bob zimo 2 tai"* or *"Carol 4 tai, Dave shoot, shooter pay"*. The form fills in for you to check before saving. You can also type the sentence instead.
 - **AI helper (LLM via OpenCode Go)**:
@@ -52,11 +54,19 @@ Open http://localhost:5173. The React dev server forwards `/api` calls to Expres
 
 To test with several players, open a second browser or a private window and log in as a different user.
 
+### Testing on phones
+
+The QR invite link uses the address you opened the app with, so `localhost` won't work on a phone. Run this instead, then open the `Network:` address that Vite prints (e.g. `http://192.168.1.20:5173`) on your computer. The QR code will then point to that address. Your phone must be on the same Wi-Fi.
+
+```bash
+npm run dev:lan
+```
+
 ### Other commands
 
 | Command | What it does |
 |---|---|
-| `npm test` | Runs the server tests: scoring rules, the voice parser, the API flow, and the AI routes with a fake LLM |
+| `npm test` | Runs the server tests (scoring rules, the voice parser, API flow, AI routes with a fake LLM) and the client tests (`client/src/**/*.test.js`, plain logic only) |
 | `npm run build` | Builds the React app into `client/dist` |
 | `npm start` | Runs Express only. If `client/dist` exists, it serves the built app too, so this is the production mode |
 
@@ -149,7 +159,8 @@ All routes except register and login need a login cookie.
 | GET | `/api/lobbies` | open lobbies, plus ones you are in |
 | POST | `/api/lobbies` | `{ name, password? }`; the creator becomes host |
 | GET | `/api/lobbies/:id` | full state for members: players, settings, totals, hands |
-| POST | `/api/lobbies/:id/join` | `{ password? }` |
+| POST | `/api/lobbies/:id/join` | `{ password? }` or `{ inviteCode }` |
+| GET | `/api/lobbies/:id/invite` | members only: `{ code }` for the QR / share link `/join/:id/:code` |
 | POST | `/api/lobbies/:id/leave` | not allowed while a game is in progress |
 | POST | `/api/lobbies/:id/start` | host only: `{ settings: { baseScore, multiplier, minTai, taiCap, payoutMode } }` |
 | POST | `/api/lobbies/:id/hands` | `{ winnerId, discarderId (null = self-drawn), tai, payoutMode? ('standard' or 'shooter'; default = lobby), note? }` |

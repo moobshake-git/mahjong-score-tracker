@@ -12,6 +12,8 @@ import {
   requireMember,
   settingsOf,
   loadLobbyState,
+  inviteCode,
+  isValidInviteCode,
 } from '../lobbyService.js';
 
 export function lobbiesRouter(db) {
@@ -75,7 +77,10 @@ export function lobbiesRouter(db) {
     const lobby = getLobbyRow(db, id);
     if (isMember(db, id, req.user.id)) return res.json({ lobby: loadLobbyState(db, id) });
     if (lobby.status !== 'waiting') throw new HttpError(409, 'This game has already started.');
-    if (lobby.password_hash) {
+    // A valid invite code (from the QR code / share link) skips the password.
+    const invited = req.body?.inviteCode != null && isValidInviteCode(id, req.body.inviteCode);
+    if (req.body?.inviteCode != null && !invited) throw new HttpError(403, 'This invite link is not valid.');
+    if (lobby.password_hash && !invited) {
       const password = String(req.body?.password ?? '');
       if (!(await bcrypt.compare(password, lobby.password_hash))) throw new HttpError(403, 'Wrong lobby password.');
     }
@@ -84,6 +89,14 @@ export function lobbiesRouter(db) {
       db.prepare('INSERT INTO lobby_members (lobby_id, user_id) VALUES (?, ?)').run(id, req.user.id);
     })();
     res.json({ lobby: loadLobbyState(db, id) });
+  });
+
+  // Invite code for the QR code / share link. Only members can see it.
+  router.get('/:id/invite', (req, res) => {
+    const id = lobbyId(req);
+    getLobbyRow(db, id);
+    requireMember(db, id, req.user.id);
+    res.json({ code: inviteCode(id) });
   });
 
   // Leave a lobby before the game starts. If the host leaves, the next player becomes host;

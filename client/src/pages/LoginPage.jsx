@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../AuthContext.jsx';
 import ErrorText from '../components/ErrorText.jsx';
 
@@ -10,8 +10,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const location = useLocation();
 
-  if (user) return <Navigate to="/" replace />;
+  // Only follow in-app paths, never a full URL.
+  const from = location.state?.from;
+  if (user) return <Navigate to={typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/'} replace />;
 
   async function onSubmit(e) {
     e.preventDefault();

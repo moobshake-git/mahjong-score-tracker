@@ -8,6 +8,8 @@ import RecordHandForm from '../components/RecordHandForm.jsx';
 import Scoreboard from '../components/Scoreboard.jsx';
 import HandHistory from '../components/HandHistory.jsx';
 import AiSummary from '../components/AiSummary.jsx';
+import InviteCard from '../components/InviteCard.jsx';
+import SettleUp from '../components/SettleUp.jsx';
 import usePolling from '../usePolling.js';
 
 export default function LobbyPage() {
@@ -68,6 +70,8 @@ export default function LobbyPage() {
 
       <ErrorText error={error} />
 
+      {lobby.status === 'waiting' && lobby.members.length < 4 && <InviteCard lobby={lobby} />}
+
       {lobby.status === 'waiting' &&
         (isHost ? (
           <GameSetupForm playerCount={lobby.members.length} onStart={act((settings) => api.startGame(lobby.id, settings))} />
@@ -76,6 +80,8 @@ export default function LobbyPage() {
         ))}
 
       {lobby.status !== 'waiting' && <Scoreboard lobby={lobby} />}
+
+      {lobby.status !== 'waiting' && <SettleUp lobby={lobby} nameOf={nameOf} />}
 
       {lobby.status === 'playing' && (
         <RecordHandForm lobby={lobby} onRecord={act((hand) => api.recordHand(lobby.id, hand))} />

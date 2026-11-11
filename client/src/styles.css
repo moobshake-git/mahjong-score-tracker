@@ -76,6 +76,9 @@ ol.list { list-style: decimal; padding-left: 20px; }
 .ai-box[open] summary { margin-bottom: 8px; }
 .summary { white-space: pre-wrap; line-height: 1.5; }
 
+.invite { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.invite h2 { align-self: flex-start; }
+.invite img { border-radius: 8px; background: #fff; max-width: 100%; height: auto; }
 .voice-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
 .voice-box input { background: var(--card); }
 .warn { color: var(--danger); font-weight: 600; }
